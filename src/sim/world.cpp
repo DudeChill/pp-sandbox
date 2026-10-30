@@ -782,6 +782,44 @@ bool World::apply_blade(BodyId id, Vec2 world_point, Vec2 dir, float energy_j) {
     return severed_joint;
 }
 
+void World::explode(Vec2 center, float radius, float energy_j) {
+    constexpr float kPi = 3.14159265358979323846f;
+    for (uint32_t i = 0; i < bodies_.size(); ++i) {
+        if (!alive_[i]) continue;
+        Body& body = bodies_[i];
+        const Vec2 delta = body.pos - center;
+        const float dist = length(delta);
+        if (dist > radius) continue;
+        const Vec2 dir = dist > 1e-4f ? delta * (1.0f / dist) : Vec2{0.0f, 1.0f};
+        const float area = 4.0f * kPi * (dist + 0.3f) * (dist + 0.3f);
+        const float impulse = energy_j / area;
+        if (body.dynamic) {
+            body.vel += dir * (impulse * body.inv_mass);
+            body.asleep = false;
+            body.sleep_timer = 0.0f;
+        }
+
+        if (body.compartment_count == 0 && body.vascularity <= 0.0f) continue;
+        const float blast = energy_j / area;
+        const float energy_factor = clampf(blast / 500.0f, 0.0f, 1.0f);
+        const Vec2 entry_local =
+            inv_rotate(body.pos - dir * 0.1f - body.pos, -body.angle);
+        const Vec2 exit_local =
+            inv_rotate(body.pos + dir * 0.1f - body.pos, -body.angle);
+        const WoundResult wr = apply_local_wound(body, entry_local, exit_local,
+                                                 energy_factor);
+        body.health = std::max(0.0f, 1.0f - wr.worst);
+        if (!body.tourniquet) {
+            body.bleed_ml_s = std::max(body.bleed_ml_s, wr.bleed);
+        }
+        if (body.group < groups_.size() && body.vital && body.health <= 0.2f) {
+            groups_[body.group].dead = true;
+        }
+        if (wounds_.size() >= 256) wounds_.erase(wounds_.begin());
+        wounds_.push_back(WoundEvent{body.pos, dir, energy_j, wr.worst, i});
+    }
+}
+
 void World::step_projectiles() {
     constexpr float kPi = 3.14159265358979323846f;
     struct FragmentSpawn {

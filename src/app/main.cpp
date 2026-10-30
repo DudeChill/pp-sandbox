@@ -205,6 +205,7 @@ int main(int, char**) {
                     case SDLK_SPACE: paused = !paused; break;
                     case SDLK_b: world.add_box(mouse_world, Vec2{0.4f, 0.4f}); break;
                     case SDLK_h: spawn_ragdoll(world, mouse_world); break;
+                    case SDLK_e: world.explode(mouse_world, 4.0f, 8000.0f); break;
                     case SDLK_1: ammo_index = 0; break;
                     case SDLK_2: ammo_index = 1; break;
                     case SDLK_3: ammo_index = 2; break;

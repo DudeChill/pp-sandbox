@@ -99,6 +99,14 @@ within 0.45 m.
 | arrow | 25.0 | 4.0 | 70 | 0.0040 | none |
 | crossbow | 30.0 | 4.5 | 110 | 0.0030 | none |
 
+## Explosions
+
+Blast impulse and tissue dose use `E / (4π(d + 0.3)²)` from an 8 kJ reference
+charge with a 4 m radius: impulse is applied as a velocity change scaled by
+inverse mass, and the wound path is a 20 cm segment through the body along the
+radial direction with `energy_factor = clamp(blast/500, 0, 1)`. Deterministic;
+no fragments, no overpressure wave.
+
 ## Open items (M4+)
 
 - Material table with density, modulus, strengths, toughness (prompt §13).

@@ -522,3 +522,20 @@ TEST_CASE("motor joint drives its target angular velocity within torque limits")
     CHECK(std::fabs(w.get(arm).ang_vel) > 1.0f);
     CHECK(w.joint_alive(j));
 }
+
+TEST_CASE("explosion kills a close ragdoll and shoves loose bodies") {
+    World w;
+    w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
+    Ragdoll near = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+    Ragdoll far = spawn_ragdoll(w, Vec2{8.0f, 0.02f});
+    const BodyId crate = w.add_box(Vec2{1.0f, 0.5f}, Vec2{0.2f, 0.2f});
+
+    InputFrame in;
+    for (int i = 0; i < 10; ++i) w.step(in);
+    w.explode(Vec2{0.6f, 1.2f}, 4.0f, 8000.0f);
+    CHECK(length(w.get(crate).vel) > 0.5f);
+    for (int i = 0; i < 30; ++i) w.step(in);
+
+    CHECK(w.vitals(w.get(near.head()).group).dead);
+    CHECK(!w.vitals(w.get(far.head()).group).dead);
+}

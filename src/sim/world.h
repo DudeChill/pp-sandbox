@@ -172,6 +172,7 @@ public:
     void add_compartment(BodyId id, Vec2 local_center, Vec2 local_half, TissueKind kind);
     // Applies a blade stroke; returns true if it severed a joint (dismemberment).
     bool apply_blade(BodyId id, Vec2 world_point, Vec2 dir, float energy_j);
+    void explode(Vec2 center, float radius, float energy_j);
 
     [[nodiscard]] bool alive(BodyId id) const;
     [[nodiscard]] BodyId id_at(uint32_t index) const {
