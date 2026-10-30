@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "font.h"
 #include "gl_api.h"
 
 namespace render {
@@ -219,6 +220,29 @@ void Renderer::line(sim::Vec2 a, sim::Vec2 b, float thickness, Color color) {
     if (len < 1e-6f) return;
     box((a + b) * 0.5f, sim::Vec2{len * 0.5f, thickness * 0.5f},
         std::atan2(d.y, d.x), color);
+}
+
+void Renderer::text(sim::Vec2 top_left, float pixel, Color color, const std::string& str) {
+    uint8_t rows[5];
+    sim::Vec2 cursor = top_left;
+    for (const char c : str) {
+        if (c == '\n') {
+            cursor = {top_left.x, cursor.y - 6.0f * pixel};
+            continue;
+        }
+        if (glyph_rows(c, rows) == 0 && c != ' ') {
+            // still advance for whitespace/unknown
+        }
+        for (int r = 0; r < 5; ++r) {
+            for (int col = 0; col < 3; ++col) {
+                if ((rows[r] & (1u << (2 - col))) == 0) continue;
+                box(sim::Vec2{cursor.x + (static_cast<float>(col) + 0.5f) * pixel,
+                              cursor.y - (static_cast<float>(r) + 0.5f) * pixel},
+                    sim::Vec2{pixel * 0.5f, pixel * 0.5f}, 0.0f, color);
+            }
+        }
+        cursor.x += 4.0f * pixel;
+    }
 }
 
 void Renderer::end() {

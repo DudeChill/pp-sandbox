@@ -101,7 +101,7 @@ int main(int, char**) {
     bool paused = false;
     BodyId grab{};
     Vec2 mouse_world{};
-    enum class Tool { None, Weld, Cut, Tourniquet, Blade };
+    enum class Tool { None, Weld, Cut, Tourniquet, Blade, Motor };
     Tool tool = Tool::None;
     BodyId weld_first{};
     Vec2 weld_point{};
@@ -148,6 +148,17 @@ int main(int, char**) {
                                 weld_point = p;
                             } else if (hit != weld_first) {
                                 world.add_weld_joint(weld_first, hit, (weld_point + p) * 0.5f);
+                                weld_first = BodyId{};
+                            }
+                        }
+                    } else if (tool == Tool::Motor) {
+                        if (hit.valid()) {
+                            if (!weld_first.valid()) {
+                                weld_first = hit;
+                                weld_point = p;
+                            } else if (hit != weld_first) {
+                                world.add_motor_joint(weld_first, hit,
+                                                      (weld_point + p) * 0.5f, 3.0f, 500.0f);
                                 weld_first = BodyId{};
                             }
                         }
@@ -210,6 +221,8 @@ int main(int, char**) {
                     case SDLK_t: tool = tool == Tool::Tourniquet ? Tool::None : Tool::Tourniquet;
                                  break;
                     case SDLK_v: tool = tool == Tool::Blade ? Tool::None : Tool::Blade; break;
+                    case SDLK_m: tool = tool == Tool::Motor ? Tool::None : Tool::Motor;
+                                 weld_first = BodyId{}; break;
                     case SDLK_x: {
                         const BodyId hit = world.pick(mouse_world);
                         if (hit.valid()) world.remove(hit);
@@ -379,6 +392,50 @@ int main(int, char**) {
                 renderer.line(pa, pb, 0.02f, c);
             }
         });
+        {
+            const float half_h = cam.view_height * 0.5f;
+            const float half_w = half_h * static_cast<float>(width) / static_cast<float>(height);
+            const sim::Vec2 tl{cam.center.x - half_w + 0.25f,
+                               cam.center.y + half_h - 0.25f};
+            const char* tool_name = "NONE";
+            switch (tool) {
+                case Tool::Weld: tool_name = "WELD"; break;
+                case Tool::Cut: tool_name = "CUT"; break;
+                case Tool::Tourniquet: tool_name = "TOURNIQUET"; break;
+                case Tool::Blade: tool_name = "BLADE"; break;
+                case Tool::Motor: tool_name = "MOTOR"; break;
+                case Tool::None: break;
+            }
+            char buf[256];
+            std::snprintf(buf, sizeof buf, "PP SANDBOX  TOOL: %s%s",
+                          tool_name, paused ? "  [PAUSED]" : "");
+            renderer.text(tl, 0.035f, render::Color{0.85f, 0.88f, 0.95f, 1.0f}, buf);
+
+            std::snprintf(buf, sizeof buf, "AMMO: %s  BODIES: %u  WOUNDS: %zu",
+                          ammo_spec(ammo_index).name, world.body_count(),
+                          world.wounds().size());
+            renderer.text(sim::Vec2{tl.x, tl.y - 0.28f}, 0.035f,
+                          render::Color{0.75f, 0.80f, 0.88f, 1.0f}, buf);
+
+            double blood = -1.0;
+            int dead = 0;
+            for (uint32_t g = 0; g < world.group_count(); ++g) {
+                const Vitals& v = world.vitals(g);
+                if (blood < 0.0 || v.blood_ml < blood) blood = v.blood_ml;
+                dead += v.dead ? 1 : 0;
+            }
+            if (world.group_count() > 0) {
+                std::snprintf(buf, sizeof buf, "BLOOD: %.0f ML  DEAD: %d", blood, dead);
+            } else {
+                std::snprintf(buf, sizeof buf, "BLOOD: --  DEAD: 0");
+            }
+            renderer.text(sim::Vec2{tl.x, tl.y - 0.56f}, 0.035f,
+                          render::Color{0.90f, 0.55f, 0.55f, 1.0f}, buf);
+
+            renderer.text(sim::Vec2{tl.x, tl.y - 0.84f}, 0.03f,
+                          render::Color{0.55f, 0.58f, 0.65f, 1.0f},
+                          "LMB GRAB/TOOL  RMB CIRCLE  F FIRE  1-3 AMMO  H RAGDOLL  O ROPE");
+        }
         renderer.end();
         SDL_GL_SwapWindow(window);
 

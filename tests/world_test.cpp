@@ -508,3 +508,17 @@ TEST_CASE("5.56 fragments inside a thick block, 9 mm does not") {
     CHECK(wounds_for(0) == 1);
     CHECK(wounds_for(1) >= 2);
 }
+
+TEST_CASE("motor joint drives its target angular velocity within torque limits") {
+    World w;
+    w.set_gravity(Vec2{0.0f, 0.0f});
+    const BodyId anchor = w.add_static_box(Vec2{0.0f, 3.0f}, Vec2{0.1f, 0.1f});
+    const BodyId arm = w.add_box(Vec2{0.0f, 2.5f}, Vec2{0.05f, 0.5f});
+    const JointId j = w.add_motor_joint(anchor, arm, Vec2{0.0f, 3.0f}, 2.0f, 2000.0f);
+    InputFrame in;
+    for (int i = 0; i < 240; ++i) w.step(in);
+    const float rel = w.get(arm).angle - w.get(anchor).angle;
+    CHECK_NEAR(rel, 2.0f, 0.4f);
+    CHECK(std::fabs(w.get(arm).ang_vel) > 1.0f);
+    CHECK(w.joint_alive(j));
+}

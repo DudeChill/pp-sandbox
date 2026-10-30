@@ -175,6 +175,8 @@ bool World::save_scene(std::vector<uint8_t>& out) const {
         w.flag(j.has_limit);
         w.f32(j.limit_min);
         w.f32(j.limit_max);
+        w.f32(j.motor_speed);
+        w.f32(j.motor_torque);
         w.f32(j.force_ema);
         w.f32(j.torque_ema);
         w.u32(j.generation);
@@ -276,6 +278,8 @@ bool World::load_scene(const void* data, std::size_t size) {
         j.has_limit = r.flag();
         j.limit_min = r.f32();
         j.limit_max = r.f32();
+        j.motor_speed = r.f32();
+        j.motor_torque = r.f32();
         j.force_ema = r.f32();
         j.torque_ema = r.f32();
         j.generation = r.u32();

@@ -111,6 +111,8 @@ struct Joint {
     bool has_limit = false;
     float limit_min = 0.0f;
     float limit_max = 0.0f;
+    float motor_speed = 0.0f;   // rad/s relative target
+    float motor_torque = 0.0f;  // N·m cap; 0 = no motor
     float accumulated = 0.0f;
     float accumulated_angular = 0.0f;
     float force_ema = 0.0f;
@@ -193,6 +195,8 @@ public:
                                float limit_max = 0.0f);
     JointId add_weld_joint(BodyId a, BodyId b, Vec2 world_anchor,
                            float break_force = 0.0f, float break_torque = 0.0f);
+    JointId add_motor_joint(BodyId a, BodyId b, Vec2 world_anchor,
+                            float motor_speed, float motor_torque);
     void remove_joint(JointId id);
     [[nodiscard]] bool joint_alive(JointId id) const;
     [[nodiscard]] Joint& joint(JointId id);

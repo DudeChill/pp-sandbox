@@ -21,7 +21,8 @@ construction) are complete:
 - 18 headless tests covering physics, joints, materials, determinism,
   allocation, and performance.
 
-Scene save/load (`F5`/`F9`) round-trips deterministically.
+Scene save/load (`F5`/`F9`) round-trips deterministically. A 3x5 bitmap HUD
+shows tool, ammunition, body/wound counts, and blood.
 
 A first **trauma/ballistics slice** (M2/M3) is in: seven ammunition classes
 (9×19, 5.56, 7.62, 12 ga slug/buck, arrow, crossbow) with
@@ -74,6 +75,7 @@ The build deliberately uses `-j2` and `-ffp-contract=off`; do not add
 | `C` | Cut tool: click near a joint to remove it |
 | `1` / `2` / `3` | Select 9×19, 5.56, or 7.62 ammunition |
 | `F` | Fire the selected round from the left of the cursor toward it |
+| `E` | Detonate an 8 kJ charge at the cursor |
 | `T` | Tourniquet tool: click a limb to stop its bleeding |
 | `V` | Blade tool: slash the body under the cursor (cuts tissue, severs limbs) |
 | `X` | Delete the body under the cursor |

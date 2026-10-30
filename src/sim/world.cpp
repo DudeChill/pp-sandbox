@@ -601,6 +601,17 @@ JointId World::add_weld_joint(BodyId a_id, BodyId b_id, Vec2 world_anchor,
     return add_joint(j);
 }
 
+JointId World::add_motor_joint(BodyId a_id, BodyId b_id, Vec2 world_anchor,
+                               float motor_speed, float motor_torque) {
+    const JointId id = add_revolute_joint(a_id, b_id, world_anchor);
+    if (id.valid()) {
+        Joint& j = joints_[id.index];
+        j.motor_speed = motor_speed;
+        j.motor_torque = motor_torque;
+    }
+    return id;
+}
+
 JointId World::add_joint(const Joint& j) {
     uint32_t idx = 0;
     if (!joint_free_.empty()) {
@@ -1269,6 +1280,17 @@ void World::solve_joints() {
                 j.accumulated_angular += impulse_ang;
                 a.ang_vel -= impulse_ang * ii_a;
                 b.ang_vel += impulse_ang * ii_b;
+            }
+
+            if (j.motor_torque > 0.0f && j.motor_speed != 0.0f) {
+                const float w_rel = b.ang_vel - a.ang_vel;
+                const float target = j.motor_speed;
+                float impulse = (target - w_rel) / k_ang;
+                const float max_impulse = j.motor_torque * kDt;
+                impulse = clampf(impulse, -max_impulse, max_impulse);
+                j.accumulated_angular += impulse;
+                a.ang_vel -= impulse * ii_a;
+                b.ang_vel += impulse * ii_b;
             }
 
         }

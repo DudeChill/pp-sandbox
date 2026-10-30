@@ -129,3 +129,10 @@ projectile loop so iteration stays valid.
 is symmetric and reproducible.
 **Revisit.** Use yaw/orientation-driven fragmentation once projectile
 orientation is simulated.
+
+## D017 — 3x5 bitmap HUD font
+**Choice.** 45 glyphs encoded as five 3-bit rows in `src/render/font.h`, drawn as
+instanced quads through the existing batch renderer.
+**Reason.** No external font dependency, crisp at any zoom, and it keeps the
+HUD inside the single draw pass.
+**Revisit.** Replace with a signed-distance atlas if typography matters.
