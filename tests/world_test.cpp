@@ -319,3 +319,80 @@ TEST_CASE("weld plastic hinge yields within 10% of section prediction") {
         CHECK(w.joint_alive(root));
     }
 }
+
+TEST_CASE("projectile falls under gravity and is slowed by drag") {
+    World w;
+    const ProjectileId free_fall = w.spawn_projectile(Vec2{0.0f, 10.0f}, Vec2{0.0f, 0.0f},
+                                                      0.008f, 0.0045f, 0.0f);
+    const ProjectileId dragged = w.spawn_projectile(Vec2{0.0f, 10.0f}, Vec2{350.0f, 0.0f},
+                                                    0.008f, 0.0045f, 0.002f);
+    InputFrame in;
+    for (int i = 0; i < 240; ++i) w.step(in);
+    CHECK_NEAR(w.projectile(free_fall).pos.y, 10.0f - 0.5f * 9.81f, 0.1f);
+    CHECK(length(w.projectile(dragged).vel) < 250.0f);
+    CHECK(length(w.projectile(dragged).vel) > 100.0f);
+}
+
+TEST_CASE("steel plate stops a pistol round, flesh lets it through") {
+    World w;
+    InputFrame in;
+
+    const BodyId steel = w.add_static_box(Vec2{0.0f, 1.0f}, Vec2{0.05f, 0.5f});
+    w.set_material(steel, MaterialId::Steel);
+    const BodyId flesh = w.add_static_box(Vec2{4.0f, 1.0f}, Vec2{0.05f, 0.5f});
+    w.set_material(flesh, MaterialId::Flesh);
+
+    const ProjectileId a = w.spawn_projectile(Vec2{-1.0f, 1.0f}, Vec2{350.0f, 0.0f},
+                                              0.008f, 0.0045f, 0.0f);
+    const ProjectileId b = w.spawn_projectile(Vec2{3.0f, 1.0f}, Vec2{350.0f, 0.0f},
+                                              0.008f, 0.0045f, 0.0f);
+    for (int i = 0; i < 30; ++i) w.step(in);
+    CHECK(!w.projectile_alive(a));
+    CHECK(w.projectile_alive(b));
+    CHECK(w.projectile(b).pos.x > 4.0f);
+}
+
+TEST_CASE("headshot kills, thigh shot bleeds without immediate death") {
+    auto shoot = [](Vec2 target, Vec2 from) {
+        World w;
+        w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
+        Ragdoll r = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+        const ProjectileId p = w.spawn_projectile(from, normalize(target - from) * 350.0f,
+                                                  0.008f, 0.0045f, 0.0f);
+        (void)p;
+        InputFrame in;
+        for (int i = 0; i < 1200; ++i) w.step(in);
+        const uint32_t group = w.get(r.head()).group;
+        return std::tuple<World, Ragdoll, uint32_t>(std::move(w), r, group);
+    };
+
+    {
+        auto [w, r, group] = shoot(Vec2{0.0f, 1.67f}, Vec2{-2.0f, 1.67f});
+        (void)r;
+        CHECK(w.vitals(group).dead);
+    }
+    {
+        auto [w, r, group] = shoot(Vec2{-0.09f, 0.66f}, Vec2{-2.0f, 0.66f});
+        (void)r;
+        CHECK(!w.vitals(group).dead);
+        CHECK(w.vitals(group).blood_ml < 5200.0f);
+    }
+}
+
+TEST_CASE("pistol penetration depth lands within 15% of the calibration target") {
+    auto shoot_block = [](float half_thickness) {
+        World w;
+        const BodyId block = w.add_static_box(Vec2{0.0f, 1.0f}, Vec2{half_thickness, 0.5f});
+        w.set_material(block, MaterialId::Flesh);
+        const ProjectileId p = w.spawn_projectile(Vec2{-2.0f, 1.0f}, Vec2{350.0f, 0.0f},
+                                                  0.008f, 0.0045f, 0.0f);
+        InputFrame in;
+        for (int i = 0; i < 60; ++i) w.step(in);
+        return w.projectile_alive(p);
+    };
+    // 9 mm FMJ at 350 m/s deposits 490 J; at 12 MPa and a 6.4e-5 m^2 cross-section
+    // the predicted depth is 0.64 m, so a 0.60 m block is perforated and a
+    // 0.70 m block is not.
+    CHECK(shoot_block(0.30f));
+    CHECK(!shoot_block(0.35f));
+}

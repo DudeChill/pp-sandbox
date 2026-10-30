@@ -21,7 +21,13 @@ construction) are complete:
 - 18 headless tests covering physics, joints, materials, determinism,
   allocation, and performance.
 
-M2–M6 (anatomy/physiology, ballistics, melee/gore, wiring/save-replay,
+A first **trauma/ballistics slice** (M2/M3) is in: 9 mm-class projectiles with
+gravity, drag, continuous collision, material-dependent penetration,
+energy-based wound damage, per-body bleeding into a shared blood volume,
+unconsciousness/death thresholds, and blood particle feedback. This is a
+lumped model, not yet the per-compartment anatomy of the specification.
+
+M4–M6 (full anatomy/physiology, melee/gore detail, wiring/save-replay,
 secondary systems, content) are not implemented yet. See `STATE.md`.
 
 ## Build
@@ -61,6 +67,7 @@ The build deliberately uses `-j2` and `-ffp-contract=off`; do not add
 | `O` | Spawn a hanging rope at the cursor |
 | `G` | Weld tool: click two bodies to weld them |
 | `C` | Cut tool: click near a joint to remove it |
+| `F` | Fire a 9 mm round from the left of the cursor toward it |
 | `X` | Delete the body under the cursor |
 | Mouse wheel | Zoom |
 | `Space` | Pause/unpause |

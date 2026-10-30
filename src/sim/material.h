@@ -26,6 +26,7 @@ struct Material {
     float yield_stress;    // Pa
     float ultimate_stress; // Pa
     float toughness;       // relative, drives crack arrest (M1+)
+    float penetration_resistance; // Pa, calibrated against gelatin tests (M3)
 };
 
 const Material& material(MaterialId id);

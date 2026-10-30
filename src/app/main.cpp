@@ -34,14 +34,14 @@ void build_scene(World& w) {
     w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
     w.add_static_box(Vec2{-24.0f, 8.0f}, Vec2{0.5f, 8.0f});
     w.add_static_box(Vec2{24.0f, 8.0f}, Vec2{0.5f, 8.0f});
-    w.add_static_box(Vec2{-6.0f, 3.0f}, Vec2{3.0f, 0.15f}, 0.42f);
-    w.add_static_box(Vec2{8.0f, 2.5f}, Vec2{2.0f, 0.15f}, -0.3f);
+    w.add_static_box(Vec2{-6.0f, 6.0f}, Vec2{3.0f, 0.15f}, 0.42f);
+    w.add_static_box(Vec2{8.0f, 5.5f}, Vec2{2.0f, 0.15f}, -0.3f);
 
     for (int i = 0; i < 6; ++i) {
         w.add_box(Vec2{2.0f, 0.5f + static_cast<float>(i)}, Vec2{0.5f, 0.5f});
     }
     for (int i = 0; i < 18; ++i) {
-        const float x = -9.0f + static_cast<float>(i % 6) * 0.55f;
+        const float x = 12.0f + static_cast<float>(i % 6) * 0.55f;
         const float y = 0.4f + static_cast<float>(i / 6) * 0.55f;
         w.add_circle(Vec2{x, y}, 0.26f);
     }
@@ -50,6 +50,7 @@ void build_scene(World& w) {
 } // namespace
 
 int main(int, char**) {
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
@@ -101,6 +102,16 @@ int main(int, char**) {
     Tool tool = Tool::None;
     BodyId weld_first{};
     Vec2 weld_point{};
+    struct Blood {
+        Vec2 pos{};
+        Vec2 vel{};
+        float life = 1.0f;
+        float radius = 0.02f;
+    };
+    std::vector<Blood> blood;
+    blood.reserve(4096);
+    std::size_t wounds_seen = 0;
+    uint32_t blood_rng = 0x9E3779B9u;
 
     double last = static_cast<double>(SDL_GetPerformanceCounter()) /
                   static_cast<double>(SDL_GetPerformanceFrequency());
@@ -118,8 +129,12 @@ int main(int, char**) {
                 width = e.window.data1;
                 height = e.window.data2;
             }
+            if (e.type == SDL_MOUSEMOTION) {
+                mouse_world = cam.screen_to_world(e.motion.x, e.motion.y, width, height);
+            }
             if (e.type == SDL_MOUSEBUTTONDOWN) {
                 const Vec2 p = cam.screen_to_world(e.button.x, e.button.y, width, height);
+                mouse_world = p;
                 if (e.button.button == SDL_BUTTON_LEFT) {
                     const BodyId hit = world.pick(p);
                     if (tool == Tool::Weld) {
@@ -169,6 +184,12 @@ int main(int, char**) {
                     case SDLK_SPACE: paused = !paused; break;
                     case SDLK_b: world.add_box(mouse_world, Vec2{0.4f, 0.4f}); break;
                     case SDLK_h: spawn_ragdoll(world, mouse_world); break;
+                    case SDLK_f: {
+                        const Vec2 start = mouse_world - Vec2{12.0f, 0.0f};
+                        const Vec2 dir = normalize(mouse_world - start);
+                        world.spawn_projectile(start, dir * 350.0f, 0.008f, 0.0045f, 0.0015f);
+                        break;
+                    }
                     case SDLK_o: spawn_rope(world, mouse_world, 10, 0.22f, 0.045f, 0.0f); break;
                     case SDLK_g: tool = tool == Tool::Weld ? Tool::None : Tool::Weld;
                                  weld_first = BodyId{}; break;
@@ -179,16 +200,19 @@ int main(int, char**) {
                         if (hit == grab) grab = BodyId{};
                         break;
                     }
-                    case SDLK_r: build_scene(world); break;
+                    case SDLK_r: build_scene(world); blood.clear(); wounds_seen = 0; break;
                     default: break;
                 }
             }
         }
 
-        int mx = 0;
-        int my = 0;
-        const Uint32 buttons = SDL_GetMouseState(&mx, &my);
-        mouse_world = cam.screen_to_world(mx, my, width, height);
+        int gx = 0;
+        int gy = 0;
+        int wx = 0;
+        int wy = 0;
+        const Uint32 buttons = SDL_GetGlobalMouseState(&gx, &gy);
+        SDL_GetWindowPosition(window, &wx, &wy);
+        mouse_world = cam.screen_to_world(gx - wx, gy - wy, width, height);
         if ((buttons & SDL_BUTTON_LMASK) == 0) grab = BodyId{};
         if (grab.valid() && !world.alive(grab)) grab = BodyId{};
 
@@ -207,10 +231,53 @@ int main(int, char**) {
                 in.grab_target = mouse_world;
                 in.grab_active = grab.valid();
                 world.step(in);
+                auto next_rand = [&]() {
+                    blood_rng ^= blood_rng << 13;
+                    blood_rng ^= blood_rng >> 17;
+                    blood_rng ^= blood_rng << 5;
+                    return static_cast<float>(blood_rng & 0xFFFFu) / 65535.0f;
+                };
+                const auto& ws = world.wounds();
+                if (ws.size() < wounds_seen) wounds_seen = 0;
+                for (std::size_t wi = wounds_seen; wi < ws.size(); ++wi) {
+                    const WoundEvent& we = ws[wi];
+                    if (we.damage <= 0.0f) continue;
+                    const BodyId wb = world.id_at(we.body);
+                    if (!wb.valid() || world.get(wb).vascularity <= 0.0f) continue;
+                    const int n = 6 + static_cast<int>(we.damage * 14.0f);
+                    for (int k = 0; k < n; ++k) {
+                        if (blood.size() >= 4096) break;
+                        const float spread = (next_rand() - 0.5f) * 2.4f;
+                        Vec2 v = we.dir * (1.0f + next_rand() * 2.5f) +
+                                 Vec2{spread, next_rand() * 1.5f};
+                        blood.push_back(Blood{we.pos, v * (1.0f + next_rand() * 2.0f),
+                                              1.0f, 0.03f + next_rand() * 0.05f});
+                    }
+                }
+                wounds_seen = ws.size();
                 accumulator -= static_cast<double>(World::kDt);
                 ++steps;
             }
             if (steps == 8) accumulator = 0.0;
+        }
+
+        {
+            const double bdt = std::min(frame_dt, 0.05);
+            for (auto& b : blood) {
+                b.vel.y -= 9.81 * bdt;
+                b.pos += b.vel * bdt;
+                if (b.pos.y < 0.01f) {
+                    b.pos.y = 0.01f;
+                    b.vel = {0.0f, 0.0f};
+                    b.life -= static_cast<float>(bdt) * 0.35f;
+                } else {
+                    b.life -= static_cast<float>(bdt) * 0.08f;
+                }
+                if (b.life < 0.0f) b.life = 0.0f;
+            }
+            blood.erase(std::remove_if(blood.begin(), blood.end(),
+                                       [](const Blood& b) { return b.life <= 0.0f; }),
+                        blood.end());
         }
 
         renderer.begin(width, height, cam.center, cam.view_height);
@@ -232,6 +299,12 @@ int main(int, char**) {
             } else {
                 renderer.box(b.pos, b.half, b.angle, color);
             }
+        });
+        for (const Blood& b : blood) {
+            renderer.circle(b.pos, b.radius, render::Color{0.62f, 0.05f, 0.08f, b.life});
+        }
+        world.for_each_projectile([&](ProjectileId, const Projectile& p) {
+            renderer.circle(p.pos, 0.02f, render::Color{1.0f, 0.92f, 0.45f, 1.0f});
         });
         world.for_each_joint([&](JointId, const Joint& j) {
             const BodyId ba = world.id_at(j.a);
@@ -255,9 +328,17 @@ int main(int, char**) {
         if (frame % 120 == 0) {
             const Uint64 now_ms = SDL_GetTicks64();
             const double fps = 120000.0 / static_cast<double>(now_ms - fps_start + 1);
-            std::printf("fps %.1f  bodies %u  contacts %u  paused %d  allocs %zu\n",
+            double blood_min = -1.0;
+            int dead = 0;
+            for (uint32_t g = 0; g < world.group_count(); ++g) {
+                const Vitals& v = world.vitals(g);
+                if (blood_min < 0.0 || v.blood_ml < blood_min) blood_min = v.blood_ml;
+                dead += v.dead ? 1 : 0;
+            }
+            std::printf("fps %.1f  bodies %u  contacts %u  wounds %zu  groups %u  dead %d  blood %.0f  allocs %zu\n",
                         fps, world.body_count(), world.contact_count(),
-                        paused ? 1 : 0, sim::allocation_count());
+                        world.wounds().size(), world.group_count(), dead, blood_min,
+                        sim::allocation_count());
             fps_start = now_ms;
         }
     }

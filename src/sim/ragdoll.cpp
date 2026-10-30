@@ -69,6 +69,23 @@ Ragdoll spawn_ragdoll(World& world, Vec2 feet_pos) {
         r.joints[i] = world.add_revolute_joint(r.parts[s.a], r.parts[s.b], anchor,
                                                s.has_limit, s.limit_min, s.limit_max);
     }
+
+    // Vascular supply by part (ml/s at full tissue damage). The head and torso
+    // are fatal; limbs bleed but are survivable without arterial involvement.
+    constexpr float kVascularity[Ragdoll::kParts] = {
+        60.0f, 50.0f, 30.0f, 12.0f, 12.0f, 10.0f, 10.0f,
+        15.0f, 15.0f, 10.0f, 10.0f, 5.0f, 5.0f,
+    };
+    Vitals v;
+    const uint32_t group = world.create_group(v);
+    for (int i = 0; i < Ragdoll::kParts; ++i) {
+        Body& b = world.get(r.parts[i]);
+        b.group = group;
+        b.material = MaterialId::Flesh;
+        b.vascularity = kVascularity[i];
+    }
+    world.get(r.parts[0]).vital = true;
+    world.get(r.parts[1]).vital = false;
     return r;
 }
 

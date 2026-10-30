@@ -227,6 +227,54 @@ bool collide(const Body& a, const Body& b, Contact& c) {
     return collide_box_box(a, b, c);
 }
 
+bool ray_circle_hit(Vec2 origin, Vec2 delta, Vec2 center, float radius,
+                    float& t_in, float& chord) {
+    const Vec2 m = origin - center;
+    const float a = dot(delta, delta);
+    if (a < 1e-12f) return false;
+    const float b = 2.0f * dot(m, delta);
+    const float c = dot(m, m) - radius * radius;
+    const float disc = b * b - 4.0f * a * c;
+    if (disc < 0.0f) return false;
+    const float root = std::sqrt(disc);
+    float t0 = (-b - root) / (2.0f * a);
+    float t1 = (-b + root) / (2.0f * a);
+    if (t1 < 0.0f || t0 > 1.0f) return false;
+    t0 = std::max(t0, 0.0f);
+    t1 = std::min(t1, 1.0f);
+    if (t1 <= t0) return false;
+    t_in = t0;
+    chord = (t1 - t0) * std::sqrt(a);
+    return true;
+}
+
+bool ray_box_hit(Vec2 origin, Vec2 delta, const Body& body, float& t_in,
+                 float& chord) {
+    const Vec2 o = inv_rotate(origin - body.pos, -body.angle);
+    const Vec2 d = inv_rotate(delta, -body.angle);
+    float tmin = 0.0f;
+    float tmax = 1.0f;
+    const float axes[2] = {d.x, d.y};
+    const float starts[2] = {o.x, o.y};
+    const float halves[2] = {body.half.x, body.half.y};
+    for (int i = 0; i < 2; ++i) {
+        if (std::fabs(axes[i]) < 1e-9f) {
+            if (std::fabs(starts[i]) > halves[i]) return false;
+            continue;
+        }
+        float t1 = (-halves[i] - starts[i]) / axes[i];
+        float t2 = (halves[i] - starts[i]) / axes[i];
+        if (t1 > t2) std::swap(t1, t2);
+        tmin = std::max(tmin, t1);
+        tmax = std::min(tmax, t2);
+        if (tmin > tmax) return false;
+    }
+    if (tmax <= tmin) return false;
+    t_in = tmin;
+    chord = (tmax - tmin) * length(delta);
+    return true;
+}
+
 } // namespace
 
 World::World() {
@@ -240,6 +288,10 @@ World::World() {
     joints_.reserve(4096);
     joint_alive_.reserve(4096);
     joint_free_.reserve(1024);
+    projectiles_.reserve(1024);
+    projectile_alive_.reserve(1024);
+    projectile_free_.reserve(256);
+    wounds_.reserve(256);
 }
 
 BodyId World::create_body() {
@@ -333,9 +385,16 @@ void World::clear() {
     joints_.clear();
     joint_alive_.clear();
     joint_free_.clear();
+    projectiles_.clear();
+    projectile_alive_.clear();
+    projectile_free_.clear();
+    groups_.clear();
+    wounds_.clear();
     count_ = 0;
     contact_count_ = 0;
     joint_count_ = 0;
+    projectile_count_ = 0;
+    tick_ = 0;
 }
 
 BodyId World::pick(Vec2 point) const {
@@ -482,6 +541,187 @@ const Joint& World::joint(JointId id) const {
     return joints_[id.index];
 }
 
+ProjectileId World::spawn_projectile(Vec2 pos, Vec2 vel, float mass, float radius,
+                                     float drag_k) {
+    uint32_t idx = 0;
+    if (!projectile_free_.empty()) {
+        idx = projectile_free_.back();
+        projectile_free_.pop_back();
+    } else {
+        idx = static_cast<uint32_t>(projectiles_.size());
+        projectiles_.emplace_back();
+        projectile_alive_.push_back(0);
+    }
+    Projectile& p = projectiles_[idx];
+    const uint32_t gen = p.generation;
+    p = Projectile{};
+    p.generation = gen;
+    p.pos = pos;
+    p.prev = pos;
+    p.vel = vel;
+    p.mass = mass;
+    p.radius = radius;
+    p.drag_k = drag_k;
+    p.alive = true;
+    projectile_alive_[idx] = 1;
+    ++projectile_count_;
+    return ProjectileId{idx, gen};
+}
+
+void World::remove_projectile(ProjectileId id) {
+    if (!projectile_alive(id)) return;
+    projectile_alive_[id.index] = 0;
+    projectiles_[id.index].alive = false;
+    ++projectiles_[id.index].generation;
+    projectile_free_.push_back(id.index);
+    --projectile_count_;
+}
+
+bool World::projectile_alive(ProjectileId id) const {
+    return id.index < projectiles_.size() && projectile_alive_[id.index] != 0 &&
+           projectiles_[id.index].generation == id.generation;
+}
+
+Projectile& World::projectile(ProjectileId id) {
+    assert(projectile_alive(id) && "invalid projectile handle");
+    return projectiles_[id.index];
+}
+
+const Projectile& World::projectile(ProjectileId id) const {
+    assert(projectile_alive(id) && "invalid projectile handle");
+    return projectiles_[id.index];
+}
+
+uint32_t World::create_group(const Vitals& v) {
+    groups_.push_back(v);
+    return static_cast<uint32_t>(groups_.size() - 1);
+}
+
+Vitals& World::vitals(uint32_t group) {
+    assert(group < groups_.size() && "invalid vitals group");
+    return groups_[group];
+}
+
+const Vitals& World::vitals(uint32_t group) const {
+    assert(group < groups_.size() && "invalid vitals group");
+    return groups_[group];
+}
+
+void World::step_projectiles() {
+    constexpr float kPi = 3.14159265358979323846f;
+    for (uint32_t i = 0; i < projectiles_.size(); ++i) {
+        if (!projectile_alive_[i]) continue;
+        Projectile& p = projectiles_[i];
+        if (!p.alive) continue;
+
+        p.prev = p.pos;
+        const float speed = length(p.vel);
+        Vec2 accel = gravity_;
+        if (p.drag_k > 0.0f) accel -= p.vel * (p.drag_k * speed);
+        p.vel += accel * kDt;
+        p.pos += p.vel * kDt;
+
+        const Vec2 delta = p.pos - p.prev;
+        if (length_sq(delta) < 1e-12f) continue;
+
+        uint32_t best_body = UINT32_MAX;
+        float best_t = 2.0f;
+        float best_chord = 0.0f;
+        for (uint32_t b = 0; b < bodies_.size(); ++b) {
+            if (!alive_[b]) continue;
+            const Body& body = bodies_[b];
+            float t_in = 0.0f;
+            float chord = 0.0f;
+            bool hit = false;
+            if (body.shape == Shape::Circle) {
+                hit = ray_circle_hit(p.prev, delta, body.pos, body.radius + p.radius,
+                                     t_in, chord);
+            } else {
+                Body expanded = body;
+                expanded.half += Vec2{p.radius, p.radius};
+                hit = ray_box_hit(p.prev, delta, expanded, t_in, chord);
+            }
+            if (hit && chord > 1e-3f && t_in < best_t) {
+                best_t = t_in;
+                best_body = b;
+                best_chord = chord;
+            }
+        }
+        if (best_body == UINT32_MAX) continue;
+
+        Body& body = bodies_[best_body];
+        const Vec2 hit_point = p.prev + delta * best_t;
+        const Vec2 dir = normalize(delta);
+        const float impact_speed = length(p.vel);
+        const float energy = 0.5f * p.mass * impact_speed * impact_speed;
+        const Material& mat = material(body.material);
+        const float area = kPi * p.radius * p.radius;
+        const float path = std::max(best_chord, 1e-4f);
+        const float depth = energy / (mat.penetration_resistance * area);
+        const float fraction = clampf(depth / path, 0.0f, 1.0f);
+        const float damage = clampf(depth / 0.20f, 0.0f, 1.0f) *
+                             clampf(path / 0.05f, 0.0f, 1.0f);
+
+        body.health = std::max(0.0f, body.health - damage);
+        if (body.vascularity > 0.0f) {
+            body.bleed_ml_s = std::max(body.bleed_ml_s, damage * body.vascularity);
+        }
+        if (body.group < groups_.size()) {
+            Vitals& v = groups_[body.group];
+            if (body.vital && body.health <= 0.2f) v.dead = true;
+        }
+
+        const Vec2 impulse = dir * (p.mass * impact_speed * fraction);
+        apply_impulse(body, hit_point - body.pos, impulse);
+        if (body.dynamic) {
+            body.asleep = false;
+            body.sleep_timer = 0.0f;
+        }
+
+        if (wounds_.size() >= 256) wounds_.erase(wounds_.begin());
+        wounds_.push_back(WoundEvent{hit_point, dir, energy, damage, best_body});
+
+        const float lost = mat.penetration_resistance * area * path;
+        const float remaining = std::max(0.0f, energy - lost);
+        if (depth > path) {
+            p.vel = dir * std::sqrt(2.0f * remaining / p.mass);
+            p.pos = hit_point + dir * (path + 2.0f * p.radius + 1e-3f);
+            if (length(p.vel) < 30.0f) {
+                p.alive = false;
+                projectile_alive_[i] = 0;
+                ++p.generation;
+                projectile_free_.push_back(i);
+                --projectile_count_;
+            }
+        } else {
+            p.alive = false;
+            projectile_alive_[i] = 0;
+            ++p.generation;
+            projectile_free_.push_back(i);
+            --projectile_count_;
+        }
+    }
+}
+
+void World::update_vitals() {
+    for (Vitals& v : groups_) v.bleed_ml_s = 0.0f;
+    for (uint32_t i = 0; i < bodies_.size(); ++i) {
+        if (!alive_[i]) continue;
+        const Body& b = bodies_[i];
+        if (b.group < groups_.size()) groups_[b.group].bleed_ml_s += b.bleed_ml_s;
+    }
+    for (Vitals& v : groups_) {
+        if (v.dead) continue;
+        v.blood_ml = std::max(0.0f, v.blood_ml - v.bleed_ml_s * kDt);
+        if (v.blood_ml < 900.0f) {
+            v.dead = true;
+        } else if (v.blood_ml < 2500.0f) {
+            v.unconscious = true;
+        }
+    }
+}
+
+
 void World::step(const InputFrame& in) {
     // 1-2. Input and force accumulation.
     for (uint32_t i = 0; i < bodies_.size(); ++i) {
@@ -543,6 +783,9 @@ void World::step(const InputFrame& in) {
     integrate();
     position_project();
     project_joints();
+    step_projectiles();
+    if ((tick_ % 4) == 0) update_vitals();
+    ++tick_;
 
     contact_count_ = static_cast<uint32_t>(contacts_.size());
     prev_contacts_ = contacts_;
@@ -928,6 +1171,23 @@ uint64_t World::state_hash() const {
         h.f32(b.inv_mass);
         h.f32(b.inv_inertia);
         h.f32(b.sleep_timer);
+    }
+    h.u32(projectile_count_);
+    for (uint32_t i = 0; i < projectiles_.size(); ++i) {
+        if (!projectile_alive_[i]) continue;
+        const Projectile& p = projectiles_[i];
+        h.u32(i);
+        h.u32(p.generation);
+        h.f32(p.pos.x);
+        h.f32(p.pos.y);
+        h.f32(p.vel.x);
+        h.f32(p.vel.y);
+    }
+    h.u32(static_cast<uint32_t>(groups_.size()));
+    for (const Vitals& v : groups_) {
+        h.f32(v.blood_ml);
+        h.boolean(v.unconscious);
+        h.boolean(v.dead);
     }
     h.u32(joint_count_);
     for (uint32_t i = 0; i < joints_.size(); ++i) {

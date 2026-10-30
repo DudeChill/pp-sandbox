@@ -11,6 +11,35 @@ namespace sim {
 
 enum class Shape : uint8_t { Circle = 0, Box = 1 };
 
+struct ProjectileTag {};
+using ProjectileId = Handle<ProjectileTag>;
+
+struct Projectile {
+    Vec2 pos{};
+    Vec2 prev{};
+    Vec2 vel{};
+    float mass = 0.008f;
+    float radius = 0.0045f;
+    float drag_k = 0.0f;   // 0.5 * rho * Cd * A / m
+    uint32_t generation = 0;
+    bool alive = true;
+};
+
+struct Vitals {
+    float blood_ml = 5200.0f;
+    float bleed_ml_s = 0.0f;
+    bool unconscious = false;
+    bool dead = false;
+};
+
+struct WoundEvent {
+    Vec2 pos{};
+    Vec2 dir{};
+    float energy = 0.0f;
+    float damage = 0.0f;
+    uint32_t body = 0;
+};
+
 struct Body {
     Vec2 pos{};
     Vec2 vel{};
@@ -34,6 +63,12 @@ struct Body {
     bool dynamic = true;
     bool asleep = false;
     float sleep_timer = 0.0f;
+
+    float health = 1.0f;
+    float bleed_ml_s = 0.0f;
+    float vascularity = 0.0f;   // ml/s at full damage
+    uint32_t group = UINT32_MAX;
+    bool vital = false;
 };
 
 enum class JointType : uint8_t { Distance = 0, Revolute = 1, Weld = 2 };
@@ -140,6 +175,14 @@ public:
     [[nodiscard]] uint32_t joint_count() const { return joint_count_; }
 
     template <class F>
+    void for_each_projectile(F&& f) const {
+        for (uint32_t i = 0; i < projectiles_.size(); ++i) {
+            if (projectile_alive_[i]) f(ProjectileId{i, projectiles_[i].generation},
+                                        projectiles_[i]);
+        }
+    }
+
+    template <class F>
     void for_each_joint(F&& f) const {
         for (uint32_t i = 0; i < joints_.size(); ++i) {
             if (joint_alive_[i]) f(JointId{i, joints_[i].generation}, joints_[i]);
@@ -147,6 +190,21 @@ public:
     }
 
     void step(const InputFrame& in);
+
+    ProjectileId spawn_projectile(Vec2 pos, Vec2 vel, float mass, float radius,
+                                  float drag_k);
+    void remove_projectile(ProjectileId id);
+    [[nodiscard]] bool projectile_alive(ProjectileId id) const;
+    [[nodiscard]] Projectile& projectile(ProjectileId id);
+    [[nodiscard]] const Projectile& projectile(ProjectileId id) const;
+    [[nodiscard]] const std::vector<WoundEvent>& wounds() const { return wounds_; }
+
+    uint32_t create_group(const Vitals& v);
+    [[nodiscard]] Vitals& vitals(uint32_t group);
+    [[nodiscard]] const Vitals& vitals(uint32_t group) const;
+    [[nodiscard]] uint32_t group_count() const {
+        return static_cast<uint32_t>(groups_.size());
+    }
 
     template <class F>
     void for_each(F&& f) const {
@@ -161,6 +219,8 @@ private:
     JointId add_joint(const Joint& j);
     void broadphase();
     void solve();
+    void step_projectiles();
+    void update_vitals();
     void solve_joints();
     void project_joints();
     void position_project();
@@ -178,6 +238,14 @@ private:
     std::vector<uint32_t> joint_free_;
     uint32_t joint_count_ = 0;
     Vec2 gravity_{0.0f, -9.81f};
+
+    std::vector<Projectile> projectiles_;
+    std::vector<uint8_t> projectile_alive_;
+    std::vector<uint32_t> projectile_free_;
+    std::vector<Vitals> groups_;
+    std::vector<WoundEvent> wounds_;
+    uint32_t projectile_count_ = 0;
+    uint64_t tick_ = 0;
     uint32_t count_ = 0;
     uint32_t contact_count_ = 0;
 };

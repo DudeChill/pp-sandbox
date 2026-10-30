@@ -51,7 +51,23 @@ yield and ultimate stress, toughness. Steel: 7850 kg/m³, 200 GPa, 250/450 MPa.
 Bone: 1900 kg/m³, 17 GPa, 130/150 MPa. These feed weld strength now and the
 penetration model in M3.
 
-## Open items (M2+)
+## Projectiles and trauma (slice)
+
+| Quantity | Value | Notes |
+|---|---|---|
+| 9 mm projectile mass / radius | 8 g / 4.5 mm | reference load |
+| muzzle speed | 350 m/s | 9×19 FMJ class |
+| drag coefficient | 0.0015 1/m | `a = −k v²`; slows to ~206 m/s after 1 s |
+| flesh penetration resistance | 12 MPa | calibrated so 9 mm penetrates 0.64 m |
+| steel penetration resistance | 800 MPa | plate stops the same round |
+| penetration depth | `E / (R·A)` | `A = πr²` |
+| wound damage | `min(1, depth/0.20)·min(1, chord/0.05)` | lumped |
+| bleed rate | `damage × vascularity` | head 60, torso 50, thigh 15 ml/s |
+| unconscious threshold | 2.5 L blood | class III hemorrhage analogue |
+| death threshold | 0.9 L blood | class IV analogue |
+| vital death | head health ≤ 0.2 | brainstem analogue |
+
+## Open items (M4+)
 
 - Material table with density, modulus, strengths, toughness (prompt §13).
 - Energy audit for restitution and friction losses.

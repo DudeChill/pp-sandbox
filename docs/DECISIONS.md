@@ -85,3 +85,18 @@ not the start. Callers set `Body::force` before stepping; any nonzero force
 wakes the body.
 **Reason.** Needed for static load tests and for motors/thrusters (M5).
 **Revisit.** Add an explicit force accumulator API if multiple systems write.
+
+## D012 — Lumped energy damage model (temporary)
+**Choice.** A projectile deposits `E/(R·A)` metres of penetration, damage scales
+with depth and chord length, bleeding is `damage × vascularity`, and a vital
+organ crossing zero health kills the group.
+**Reason.** Gives a testable end-to-end slice (penetration calibration, headshot
+death, limb bleed) before the per-compartment anatomy lands.
+**Revisit.** M4 replaces this with compartment polygons and wound channels.
+
+## D013 — Blood particles are presentation-only
+**Choice.** The renderer spawns particles from wound events; the simulation
+tracks blood as a scalar per vitals group.
+**Reason.** Keeps the tick allocation-free and deterministic while giving
+visible feedback. Volume conservation is asserted for the scalar, not particles.
+**Revisit.** M4 ties emitted particle volume to the blood deficit.
