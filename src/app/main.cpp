@@ -98,6 +98,8 @@ int main(int argc, char** argv) {
     SDL_SetMainReady();
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
     if (self_test) {
+        std::printf("SELF-TEST starting\n");
+        std::fflush(stdout);
         if (SDL_Init(SDL_INIT_TIMER) != 0) {
             std::fprintf(stderr, "self-test: SDL init failed: %s\n", SDL_GetError());
             return 2;

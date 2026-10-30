@@ -138,9 +138,13 @@ TEST_CASE("step performs no heap allocation after warmup") {
 TEST_CASE("stale handles are rejected") {
     World w;
     const BodyId id = w.add_circle(Vec2{0.0f, 0.0f}, 0.5f);
+    const BodyId other = w.add_circle(Vec2{1.0f, 0.0f}, 0.5f);
+    w.add_distance_joint(id, other, Vec2{0.0f, 0.0f}, Vec2{1.0f, 0.0f}, 1.0f);
+    CHECK(w.joint_count() == 1);
     CHECK(w.alive(id));
     w.remove(id);
     CHECK(!w.alive(id));
+    CHECK(w.joint_count() == 0);
     const BodyId again = w.add_circle(Vec2{1.0f, 0.0f}, 0.5f);
     CHECK(again.index == id.index);
     CHECK(again.generation != id.generation);

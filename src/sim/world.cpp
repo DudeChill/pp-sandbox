@@ -474,6 +474,19 @@ void World::remove(BodyId id) {
         wires_[write++] = wires_[read];
     }
     wires_.resize(write);
+
+    // Drop every joint that references the removed body; a stale joint would
+    // later act on a recycled slot.
+    for (uint32_t ji = 0; ji < joints_.size(); ++ji) {
+        if (!joint_alive_[ji]) continue;
+        Joint& j = joints_[ji];
+        if (j.a != id.index && j.b != id.index) continue;
+        joint_alive_[ji] = 0;
+        j.alive = false;
+        ++j.generation;
+        joint_free_.push_back(ji);
+        --joint_count_;
+    }
 }
 
 void World::clear() {
@@ -496,6 +509,7 @@ void World::clear() {
     joint_count_ = 0;
     projectile_count_ = 0;
     tick_ = 0;
+    periodic_hash_ = 0;
 }
 
 BodyId World::pick(Vec2 point) const {

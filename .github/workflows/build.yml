@@ -55,7 +55,10 @@ jobs:
           }
           Get-ChildItem dist
       - name: Runtime smoke test
-        run: ./dist/pp.exe --self-test
+        shell: cmd
+        run: |
+          dist\pp.exe --self-test
+          echo EXITCODE=%ERRORLEVEL%
 
       - name: Upload runtime
         uses: actions/upload-artifact@v4
