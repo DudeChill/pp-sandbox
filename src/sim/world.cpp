@@ -449,6 +449,13 @@ JointId World::add_revolute_joint(BodyId a_id, BodyId b_id, Vec2 world_anchor,
     return add_joint(j);
 }
 
+void World::apply_tourniquet(BodyId id) {
+    if (!alive(id)) return;
+    Body& b = bodies_[id.index];
+    b.tourniquet = true;
+    b.bleed_ml_s = 0.0f;
+}
+
 void World::set_material(BodyId id, MaterialId m) {
     if (!alive(id)) return;
     Body& b = bodies_[id.index];

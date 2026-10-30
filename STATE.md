@@ -28,9 +28,12 @@ Implemented:
 - Trauma: per-body health, wound events, bleeding scaled by vascularity,
   shared blood volume, unconsciousness (<2.5 L) and death (<0.9 L), vital
   (brain) destruction threshold; ragdoll vitals group.
-- Blood particle feedback (presentation only, not yet volume-conserving).
+- Tourniquet treatment (stops limb bleeding, asserted stable blood volume).
+- Blood particle feedback and a per-ragdoll blood bar (presentation only,
+  not yet volume-conserving).
 - Tests: penetration depth calibration, steel-stop vs flesh pass-through,
-  headshot death, limb bleed without immediate death, drag/gravity.
+  headshot death, limb bleed without immediate death, drag/gravity,
+  tourniquet-stabilised blood volume.
 
 ## Next tasks (M4)
 1. Per-compartment anatomy with wound channels instead of lumped damage.

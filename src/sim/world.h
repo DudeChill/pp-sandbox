@@ -69,6 +69,7 @@ struct Body {
     float vascularity = 0.0f;   // ml/s at full damage
     uint32_t group = UINT32_MAX;
     bool vital = false;
+    bool tourniquet = false;
 };
 
 enum class JointType : uint8_t { Distance = 0, Revolute = 1, Weld = 2 };
@@ -145,6 +146,7 @@ public:
     void set_gravity(Vec2 g) { gravity_ = g; }
     [[nodiscard]] Vec2 gravity() const { return gravity_; }
     void set_material(BodyId id, MaterialId m);
+    void apply_tourniquet(BodyId id);
 
     [[nodiscard]] bool alive(BodyId id) const;
     [[nodiscard]] BodyId id_at(uint32_t index) const {

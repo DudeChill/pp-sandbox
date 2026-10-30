@@ -396,3 +396,24 @@ TEST_CASE("pistol penetration depth lands within 15% of the calibration target")
     CHECK(shoot_block(0.30f));
     CHECK(!shoot_block(0.35f));
 }
+
+TEST_CASE("tourniquet stops bleeding from a limb wound") {
+    World w;
+    w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
+    Ragdoll r = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+    const BodyId thigh = r.parts[7];
+    w.spawn_projectile(Vec2{-2.0f, 0.66f}, Vec2{350.0f, 0.0f}, 0.008f, 0.0045f, 0.0f);
+    InputFrame in;
+    for (int i = 0; i < 480; ++i) w.step(in);
+    const uint32_t group = w.get(thigh).group;
+    const float bleeding = w.vitals(group).blood_ml;
+    CHECK(w.get(thigh).bleed_ml_s > 0.0f);
+
+    for (int i = 0; i < Ragdoll::kParts; ++i) {
+        if (w.get(r.parts[i]).bleed_ml_s > 0.0f) w.apply_tourniquet(r.parts[i]);
+    }
+    for (int i = 0; i < 480; ++i) w.step(in);
+    const float treated = w.vitals(group).blood_ml;
+    CHECK(treated >= bleeding - 1.0f);
+    CHECK(!w.vitals(group).dead);
+}

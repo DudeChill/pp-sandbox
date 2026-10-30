@@ -98,7 +98,7 @@ int main(int, char**) {
     bool paused = false;
     BodyId grab{};
     Vec2 mouse_world{};
-    enum class Tool { None, Weld, Cut };
+    enum class Tool { None, Weld, Cut, Tourniquet };
     Tool tool = Tool::None;
     BodyId weld_first{};
     Vec2 weld_point{};
@@ -147,6 +147,8 @@ int main(int, char**) {
                                 weld_first = BodyId{};
                             }
                         }
+                    } else if (tool == Tool::Tourniquet) {
+                        if (hit.valid()) world.apply_tourniquet(hit);
                     } else if (tool == Tool::Cut) {
                         JointId best{};
                         float best_d = 0.25f;
@@ -194,6 +196,8 @@ int main(int, char**) {
                     case SDLK_g: tool = tool == Tool::Weld ? Tool::None : Tool::Weld;
                                  weld_first = BodyId{}; break;
                     case SDLK_c: tool = tool == Tool::Cut ? Tool::None : Tool::Cut; break;
+                    case SDLK_t: tool = tool == Tool::Tourniquet ? Tool::None : Tool::Tourniquet;
+                                 break;
                     case SDLK_x: {
                         const BodyId hit = world.pick(mouse_world);
                         if (hit.valid()) world.remove(hit);
@@ -300,6 +304,24 @@ int main(int, char**) {
                 renderer.box(b.pos, b.half, b.angle, color);
             }
         });
+        for (uint32_t g = 0; g < world.group_count(); ++g) {
+            BodyId representative{};
+            world.for_each([&](BodyId id, const Body& b) {
+                if (!representative.valid() && b.group == g) representative = id;
+            });
+            if (!representative.valid()) continue;
+            const Vitals& v = world.vitals(g);
+            const Body& hb = world.get(representative);
+            const Vec2 bar_center{hb.pos.x, hb.pos.y + 0.35f};
+            const float frac = clampf(v.blood_ml / 5200.0f, 0.0f, 1.0f);
+            renderer.box(bar_center, Vec2{0.30f, 0.025f}, 0.0f,
+                         render::Color{0.10f, 0.10f, 0.12f, 0.85f});
+            render::Color fill = v.dead ? render::Color{0.45f, 0.45f, 0.45f, 0.95f}
+                                        : render::Color{0.75f - 0.45f * frac, 0.25f + 0.55f * frac,
+                                                        0.20f, 0.95f};
+            renderer.box(Vec2{bar_center.x - 0.30f * (1.0f - frac), bar_center.y},
+                         Vec2{0.30f * frac, 0.018f}, 0.0f, fill);
+        }
         for (const Blood& b : blood) {
             renderer.circle(b.pos, b.radius, render::Color{0.62f, 0.05f, 0.08f, b.life});
         }
