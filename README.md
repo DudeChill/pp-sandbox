@@ -1,5 +1,7 @@
 # pp — a physics sandbox
 
+![build](https://github.com/DudeChill/pp-sandbox/actions/workflows/build.yml/badge.svg)
+
 A 2D ragdoll physics sandbox in the lineage of *People Playground*, built around a
 deterministic simulation core. The long-term goal is simulation-grade trauma,
 ballistics, and material behaviour: every visible wound or fracture must be
@@ -61,6 +63,12 @@ The build links SDL2 dynamically and vcpkg copies `SDL2.dll` next to the
 executable. If it is missing, copy `SDL2.dll` from
 `%VCPKG_ROOT%\installed\x64-windows\bin`. The simulation and tests build
 without SDL using `-DPP_BUILD_APP=OFF`.
+
+Prebuilt Windows x64 binaries (exe, SDL2, VC++ runtime) are published as the
+`pp-windows-x64` artifact on each green CI run:
+<https://github.com/DudeChill/pp-sandbox/actions/workflows/build.yml>.
+The executable uses the console subsystem, so a terminal window stays open
+behind the game window (useful for logs).
 
 ### Linux
 

@@ -36,11 +36,22 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Bench
         run: ./build/Release/pp_bench.exe
+      - name: Stage runtime
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build/Release/pp.exe dist/
+          Copy-Item build/Release/*.dll dist/ -ErrorAction SilentlyContinue
+          $crt = @('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll','concrt140.dll')
+          foreach ($dll in $crt) {
+            $p = Join-Path $env:WINDIR "System32/$dll"
+            if (Test-Path $p) { Copy-Item $p dist/ }
+          }
+          Get-ChildItem dist
+
       - name: Upload runtime
         uses: actions/upload-artifact@v4
         with:
           name: pp-windows-x64
-          path: |
-            build/Release/pp.exe
-            build/Release/*.dll
+          path: dist/
           if-no-files-found: error
