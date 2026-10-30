@@ -28,6 +28,9 @@ target_compile_options(pp_tests PRIVATE ${PP_WARNINGS} ${PP_FP_FLAGS})
 target_link_libraries(pp_tests PRIVATE pp_sim)
 add_test(NAME core COMMAND pp_tests)
 
+add_executable(pp_bench tools/bench.cpp)
+target_link_libraries(pp_bench PRIVATE pp_sim)
+
 add_executable(pp_make_wiring tools/make_wiring.cpp)
 target_link_libraries(pp_make_wiring PRIVATE pp_sim)
 

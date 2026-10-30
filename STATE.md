@@ -90,3 +90,4 @@ Implemented:
 | 2026-10-30 | M1 tests, 500 bodies | 0.6 ms/step |
 | 2026-10-30 | demo scene + 50 projectiles | 390–550 fps (llvmpipe) |
 | 2026-10-30 | scene save/load round-trip | 3.3 KB, hashes equal |
+| 2026-10-30 | 1,500 bodies (`pp_bench`) | avg 1.45 ms, p99 2.19 ms (budget 8 ms) |
