@@ -24,9 +24,21 @@
         "value": "x64",
         "strategy": "set"
       },
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "PP_BUILD_APP": "ON"
+      }
+    },
+    {
+      "name": "windows-vcpkg",
+      "binaryDir": "${sourceDir}/build/windows-vcpkg",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "PP_BUILD_APP": "ON",
+        "PP_FETCH_SDL2": "OFF"
       }
     }
   ],
@@ -42,6 +54,11 @@
     {
       "name": "windows",
       "configurePreset": "windows",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-vcpkg",
+      "configurePreset": "windows-vcpkg",
       "configuration": "Release"
     }
   ]

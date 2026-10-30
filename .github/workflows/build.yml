@@ -26,6 +26,20 @@ jobs:
       - name: Runtime smoke test
         run: ./build/pp --self-test
 
+  windows-fetch:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure without vcpkg (auto-fetch SDL2)
+        run: cmake --preset windows
+      - name: Build
+        run: cmake --build --preset windows --target pp -j2
+      - name: Runtime smoke test
+        shell: cmd
+        run: |
+          build\windows\Release\pp.exe --self-test
+          echo EXITCODE=%ERRORLEVEL%
+
   windows:
     runs-on: windows-latest
     steps:

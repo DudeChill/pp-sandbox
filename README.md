@@ -20,15 +20,16 @@ On Debian/Ubuntu without `libsdl2-dev`, `build.sh` fetches the headers into
 `~/.local/opt/ppdeps` without root. Plain `cmake -S . -B build` also finds that
 prefix automatically.
 
-Windows 10/11 (Visual Studio 2022 Build Tools + vcpkg):
+Windows 10/11 (Visual Studio 2022 Build Tools + CMake):
 
 ```bat
-set VCPKG_ROOT=C:\vcpkg
-run.cmd
+.\run.cmd
 ```
 
-`run.cmd` configures with the vcpkg toolchain, installs the manifest dependency
-(`sdl2`), builds Release, and launches `pp.exe`.
+`run.cmd` configures, builds Release, and launches `pp.exe`. SDL2 is downloaded
+automatically as a signed prebuilt package the first time; no vcpkg or manual
+dependency setup is needed. In PowerShell, prefix the script with `.\` as shown;
+typing `run.cmd` alone searches only `PATH`.
 
 ## Status — M0–M9 complete
 
@@ -59,9 +60,8 @@ run.cmd
 
 ### Windows 10/11 (x64)
 
-Requirements: Visual Studio 2022 Build Tools (Desktop C++), CMake 3.25+, and
-[vcpkg](https://github.com/microsoft/vcpkg). `run.cmd` does the rest; the manual
-equivalent is:
+Requirements: Visual Studio 2022 Build Tools (Desktop C++) and CMake 3.25+.
+`run.cmd` does the rest; the manual equivalent is:
 
 ```bat
 cmake --preset windows
@@ -69,12 +69,16 @@ cmake --build --preset windows
 build\windows\Release\pp.exe
 ```
 
-The `windows` preset points at `$env{VCPKG_ROOT}` and stages SDL2 via the
-manifest in `vcpkg.json`.
+If SDL2 is already installed (vcpkg, system, or a devel archive), CMake uses it.
+Otherwise `PP_FETCH_SDL2=ON` downloads the official SDL2 VC package into
+`build/_deps` and copies `SDL2.dll` next to the executable. Offline or
+vcpkg-based builds can configure with
+`-DPP_FETCH_SDL2=OFF -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake`
+or use the `windows-vcpkg` preset.
 
-vcpkg copies `SDL2.dll` next to the executable. `pp.exe` is built as a console
-application so logs stay visible. The simulation and tests build without SDL
-using `-DPP_BUILD_APP=OFF`. Prebuilt bundles are the
+`pp.exe` is built as a console application so logs stay visible, and the
+downloaded or vcpkg `SDL2.dll` sits next to it. The simulation and tests build
+without SDL using `-DPP_BUILD_APP=OFF`. Prebuilt bundles are the
 `pp-windows-x64` artifact on green CI runs:
 <https://github.com/DudeChill/pp-sandbox/actions/workflows/build.yml>.
 
