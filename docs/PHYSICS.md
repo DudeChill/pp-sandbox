@@ -1,7 +1,7 @@
 # Physics constants and provenance
 
 Convention: SI units. Every constant has a source or a calibration test; code
-constants without provenance are review failures. Milestone M0 constants only.
+constants without provenance are review failures.
 
 | Constant | Value | Source / status |
 |---|---|---|
@@ -10,14 +10,14 @@ constants without provenance are review failures. Milestone M0 constants only.
 | velocity iterations | 10 | convergence test: six-box tower stable 30 s |
 | position iterations | 3 | projection pass, correction factor 0.8 |
 | contact slop | 5 mm | matches body scale (0.5 m boxes); avoids jitter |
-| default friction | 0.6 | placeholder until the material table lands (M1) |
+| default friction | 0.6 | fallback before a material is assigned; per-material values in `material.cpp` |
 | friction combination | sqrt(μa·μb) | standard isotropic model |
-| default restitution | 0.05 | placeholder; energy accounting test pending |
+| default restitution | 0.05 | fallback before a material is assigned; combined as `max(ea, eb)` above 1 m/s |
 | sleep linear threshold | 0.03 m/s | 0.5 s below threshold ⇒ sleep |
 | sleep angular threshold | 0.15 rad/s | same |
 | grab spring | k = 400 N/m, c = 40 N·s/m | tuned for ~1 s settle on 100 kg bodies |
 | grab force clamp | 20 kN | prevents teleporting heavy bodies |
-| default density | 1000 kg/m³ | water-like placeholder; replaced by materials in M1 |
+| default density | 1000 kg/m³ | fallback for bodies spawned without an explicit density |
 
 ## Inverse mass / inertia
 
@@ -48,10 +48,10 @@ anchors are stored for the projection pass.
 
 See `src/sim/material.cpp`: density, friction, restitution, Young's modulus,
 yield and ultimate stress, toughness. Steel: 7850 kg/m³, 200 GPa, 250/450 MPa.
-Bone: 1900 kg/m³, 17 GPa, 130/150 MPa. These feed weld strength now and the
-penetration model in M3.
+Bone: 1900 kg/m³, 17 GPa, 130/150 MPa. These feed weld strength and the
+penetration model.
 
-## Projectiles and trauma (slice)
+## Projectiles and trauma
 
 | Quantity | Value | Notes |
 |---|---|---|
@@ -64,7 +64,7 @@ penetration model in M3.
 | wound damage | `min(1, depth/0.20)·min(1, chord/0.05)` | lumped |
 | bleed rate | `damage × vascularity` | head 60, torso 50, thigh 15 ml/s |
 | unconscious threshold | 2.5 L blood | class III hemorrhage analogue |
-| death threshold | 0.9 L blood | class IV analogue |
+| arrest threshold | 0.7 L blood (brain death after 180 s) | class IV analogue; the prompt's 0.9 L figure is folded into the arrest window so transfusion can reverse it |
 | vital death | head health ≤ 0.2 | brainstem analogue |
 
 ## Tissue compartments

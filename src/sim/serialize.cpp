@@ -8,7 +8,7 @@ namespace sim {
 namespace {
 
 constexpr uint32_t kMagic = 0x43535050u;  // "PPSC"
-constexpr uint32_t kVersion = 1u;
+constexpr uint32_t kVersion = 2u;
 
 struct Writer {
     std::vector<uint8_t>& out;
@@ -82,6 +82,7 @@ void write_body(Writer& w, const Body& b) {
     w.f32(b.friction);
     w.f32(b.restitution);
     w.u8(static_cast<uint8_t>(b.shape));
+    w.u8(static_cast<uint8_t>(b.material));
     w.u32(b.generation);
     w.flag(b.dynamic);
     w.flag(b.asleep);
@@ -133,6 +134,7 @@ bool read_body(Reader& r, Body& b) {
     b.friction = r.f32();
     b.restitution = r.f32();
     b.shape = static_cast<Shape>(r.u8());
+    b.material = static_cast<MaterialId>(r.u8());
     b.generation = r.u32();
     b.dynamic = r.flag();
     b.asleep = r.flag();

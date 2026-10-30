@@ -26,6 +26,8 @@ add_library(pp_sim STATIC
     src/sim/alloc.cpp
 )
 target_include_directories(pp_sim PUBLIC src)
+find_package(Threads REQUIRED)
+target_link_libraries(pp_sim PUBLIC Threads::Threads)
 
 enable_testing()
 

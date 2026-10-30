@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <condition_variable>
 #include <limits>
+#include <mutex>
+#include <thread>
 
 #include "hash.h"
 
@@ -307,7 +310,7 @@ WoundResult apply_local_wound(Body& body, Vec2 entry, Vec2 exit, float energy_fa
                                   ? clampf(temporary_cavity_m / 0.15f, 0.0f, 1.0f) * 0.3f
                                   : 0.0f;
         comp.damage = clampf(comp.damage + dmg * 0.7f + stretch, 0.0f, 1.0f);
-        if (comp.kind == TissueKind::Artery && dmg > 0.2f) comp.severed = true;
+        if (comp.kind == TissueKind::Artery && comp.damage > 0.2f) comp.severed = true;
         result.worst = std::max(result.worst, comp.damage * tissue_weight(comp.kind));
         result.bleed += comp.severed ? tissue_bleed_rate(comp.kind)
                                      : comp.damage * tissue_bleed_rate(comp.kind);
@@ -1405,6 +1408,181 @@ void World::step(const InputFrame& in) {
 
     contact_count_ = static_cast<uint32_t>(contacts_.size());
     prev_contacts_ = contacts_;
+    if ((tick_ % 60) == 0) periodic_hash_ = state_hash();
+}
+
+namespace {
+
+// Persistent worker pool for the broadphase. Jobs are dispatched by index;
+// each worker writes its own preallocated contact chunk, and the chunks are
+// merged in ascending chunk order before the canonical sort. This keeps the
+// result bitwise identical to the serial path.
+class WorkerPool {
+public:
+    using Job = void (*)(void*, int, int);
+
+    WorkerPool() = default;
+    WorkerPool(const WorkerPool&) = delete;
+    WorkerPool& operator=(const WorkerPool&) = delete;
+
+    ~WorkerPool() { stop(); }
+
+    void ensure(int total) {
+        if (total < 1) total = 1;
+        if (total <= total_) return;
+        const int old = total_;
+        total_ = total;
+        buffers_.resize(static_cast<std::size_t>(total));
+        for (auto& v : buffers_) {
+            if (v.capacity() < (1u << 16)) v.reserve(1u << 16);
+        }
+        if (total <= 1) return;
+        for (int i = (old > 1 ? old : 1); i < total; ++i) {
+            threads_.emplace_back([this, i] { worker(i); });
+        }
+    }
+
+    void run(Job fn, void* ctx, int chunks) {
+        if (total_ <= 1) {
+            fn(ctx, 0, 1);
+            return;
+        }
+        if (chunks > total_) chunks = total_;
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            fn_ = fn;
+            ctx_ = ctx;
+            job_chunks_ = chunks;
+            pending_ = chunks - 1;
+            ++epoch_;
+        }
+        cv_work_.notify_all();
+        fn(ctx, 0, chunks);
+        std::unique_lock<std::mutex> lk(mu_);
+        cv_done_.wait(lk, [this] { return pending_ == 0; });
+    }
+
+    [[nodiscard]] int chunk_count() const { return total_; }
+    std::vector<Contact>& chunk(int i) { return buffers_[static_cast<std::size_t>(i)]; }
+    std::vector<std::vector<Contact>>* buffers() { return &buffers_; }
+
+private:
+    void worker(int index) {
+        std::unique_lock<std::mutex> lk(mu_);
+        uint64_t seen = 0;
+        for (;;) {
+            cv_work_.wait(lk, [this, &seen] { return stop_ || epoch_ != seen; });
+            if (stop_) return;
+            seen = epoch_;
+            if (index >= job_chunks_) continue;
+            const Job fn = fn_;
+            void* const ctx = ctx_;
+            const int chunk = index;
+            const int chunks = job_chunks_;
+            lk.unlock();
+            fn(ctx, chunk, chunks);
+            lk.lock();
+            if (--pending_ == 0) cv_done_.notify_one();
+        }
+    }
+
+    void stop() {
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            stop_ = true;
+        }
+        cv_work_.notify_all();
+        for (std::thread& t : threads_) {
+            if (t.joinable()) t.join();
+        }
+        threads_.clear();
+        total_ = 0;
+    }
+
+    std::vector<std::thread> threads_;
+    std::vector<std::vector<Contact>> buffers_;
+    std::mutex mu_;
+    std::condition_variable cv_work_;
+    std::condition_variable cv_done_;
+    Job fn_ = nullptr;
+    void* ctx_ = nullptr;
+    int job_chunks_ = 0;
+    int pending_ = 0;
+    int total_ = 0;
+    uint64_t epoch_ = 0;
+    bool stop_ = false;
+};
+
+WorkerPool& pool() {
+    static WorkerPool instance;
+    return instance;
+}
+
+struct PairJob {
+    const Body* bodies;
+    const AABB* aabbs;
+    const uint32_t* order;
+    std::size_t count;
+    std::vector<Contact>* out;
+    std::vector<std::vector<Contact>>* chunk_out;
+};
+
+void collide_range(void* vp, int chunk, int chunks) {
+    PairJob& job = *static_cast<PairJob*>(vp);
+    std::vector<Contact>& dst =
+        job.chunk_out ? (*job.chunk_out)[static_cast<std::size_t>(chunk)] : *job.out;
+    const std::size_t lo =
+        job.count * static_cast<std::size_t>(chunk) / static_cast<std::size_t>(chunks);
+    const std::size_t hi =
+        job.count * static_cast<std::size_t>(chunk + 1) / static_cast<std::size_t>(chunks);
+    for (std::size_t i = lo; i < hi; ++i) {
+        const uint32_t ia = job.order[i];
+        const AABB& ba = job.aabbs[ia];
+        for (std::size_t j = i + 1; j < job.count; ++j) {
+            const uint32_t ib = job.order[j];
+            const AABB& bb = job.aabbs[ib];
+            if (bb.min_x > ba.max_x) break;
+            if (!overlaps(ba, bb)) continue;
+
+            const Body& a = job.bodies[ia];
+            const Body& b = job.bodies[ib];
+            if (!a.dynamic && !b.dynamic) continue;
+            if (a.asleep && b.asleep) continue;
+
+            Contact c;
+            if (!collide(a, b, c)) continue;
+            c.a = ia;
+            c.b = ib;
+
+            c.mu = std::sqrt(a.friction * b.friction);
+            const float e = std::max(a.restitution, b.restitution);
+            float bias = 0.0f;
+            if (e > 0.0f) {
+                const Vec2 ra = c.pt[0].p - a.pos;
+                const Vec2 rb = c.pt[0].p - b.pos;
+                const Vec2 vrel = (b.vel + cross(b.ang_vel, rb)) -
+                                  (a.vel + cross(a.ang_vel, ra));
+                const float vn = dot(vrel, c.n);
+                if (vn < -1.0f) bias = -e * vn;
+            }
+            c.restitution_bias = bias;
+            for (uint8_t k = 0; k < c.count; ++k) {
+                ContactPoint& cp = c.pt[k];
+                cp.local_a = inv_rotate(cp.p - a.pos, -a.angle);
+                cp.local_b = inv_rotate(cp.p - b.pos, -b.angle);
+            }
+            dst.push_back(c);
+        }
+    }
+}
+
+} // namespace
+
+void World::set_thread_count(int n) {
+    if (n < 1) n = 1;
+    if (n > 8) n = 8;
+    thread_count_ = n;
+    pool().ensure(n);
 }
 
 void World::broadphase() {
@@ -1424,57 +1602,43 @@ void World::broadphase() {
         return lx < rx || (lx == rx && lhs < rhs);
     });
 
+    PairJob job{bodies_.data(), aabbs_.data(), order_.data(), order_.size(),
+                nullptr, nullptr};
+
     contacts_.clear();
-    for (size_t i = 0; i < order_.size(); ++i) {
-        const uint32_t ia = order_[i];
-        const AABB& ba = aabbs_[ia];
-        for (size_t j = i + 1; j < order_.size(); ++j) {
-            const uint32_t ib = order_[j];
-            const AABB& bb = aabbs_[ib];
-            if (bb.min_x > ba.max_x) break;
-            if (!overlaps(ba, bb)) continue;
+    if (thread_count_ <= 1) {
+        job.out = &contacts_;
+        collide_range(&job, 0, 1);
+    } else {
+        WorkerPool& wp = pool();
+        wp.ensure(thread_count_);
+        const int chunks = thread_count_;
+        for (int i = 0; i < chunks; ++i) wp.chunk(i).clear();
+        job.chunk_out = wp.buffers();
+        wp.run(collide_range, &job, chunks);
+        std::size_t total = 0;
+        for (int i = 0; i < chunks; ++i) total += wp.chunk(i).size();
+        if (total > contacts_.capacity()) contacts_.reserve(total);
+        for (int i = 0; i < chunks; ++i) {
+            const std::vector<Contact>& src = wp.chunk(i);
+            contacts_.insert(contacts_.end(), src.begin(), src.end());
+        }
+    }
 
-            const Body& a = bodies_[ia];
-            const Body& b = bodies_[ib];
-            if (!a.dynamic && !b.dynamic) continue;
-            if (a.asleep && b.asleep) continue;
-
-            Contact c;
-            if (!collide(a, b, c)) continue;
-            c.a = ia;
-            c.b = ib;
-
-            if (a.dynamic && b.dynamic) {
-                if (a.asleep) {
-                    Body& wa = bodies_[ia];
-                    wa.asleep = false;
-                    wa.sleep_timer = 0.0f;
-                }
-                if (b.asleep) {
-                    Body& wb = bodies_[ib];
-                    wb.asleep = false;
-                    wb.sleep_timer = 0.0f;
-                }
+    // Waking is deferred until after the merge so parallel chunks never write
+    // shared body flags.
+    for (const Contact& c : contacts_) {
+        Body& a = bodies_[c.a];
+        Body& b = bodies_[c.b];
+        if (a.dynamic && b.dynamic) {
+            if (a.asleep) {
+                a.asleep = false;
+                a.sleep_timer = 0.0f;
             }
-
-            c.mu = std::sqrt(a.friction * b.friction);
-            const float e = std::max(a.restitution, b.restitution);
-            float bias = 0.0f;
-            if (e > 0.0f) {
-                const Vec2 ra = c.pt[0].p - a.pos;
-                const Vec2 rb = c.pt[0].p - b.pos;
-                const Vec2 vrel = (b.vel + cross(b.ang_vel, rb)) -
-                                  (a.vel + cross(a.ang_vel, ra));
-                const float vn = dot(vrel, c.n);
-                if (vn < -1.0f) bias = -e * vn;
+            if (b.asleep) {
+                b.asleep = false;
+                b.sleep_timer = 0.0f;
             }
-            c.restitution_bias = bias;
-            for (uint8_t k = 0; k < c.count; ++k) {
-                ContactPoint& cp = c.pt[k];
-                cp.local_a = inv_rotate(cp.p - a.pos, -a.angle);
-                cp.local_b = inv_rotate(cp.p - b.pos, -b.angle);
-            }
-            contacts_.push_back(c);
         }
     }
 
@@ -1781,6 +1945,7 @@ uint64_t World::state_hash() const {
         h.u32(i);
         h.u32(b.generation);
         h.u32(static_cast<uint32_t>(b.shape));
+        h.u32(static_cast<uint32_t>(b.material));
         h.boolean(b.dynamic);
         h.boolean(b.asleep);
         h.f32(b.pos.x);
@@ -1797,7 +1962,15 @@ uint64_t World::state_hash() const {
         h.f32(b.radius);
         h.f32(b.inv_mass);
         h.f32(b.inv_inertia);
+        h.f32(b.friction);
+        h.f32(b.restitution);
         h.f32(b.sleep_timer);
+        h.f32(b.health);
+        h.f32(b.bleed_ml_s);
+        h.f32(b.vascularity);
+        h.u32(b.group);
+        h.boolean(b.vital);
+        h.boolean(b.tourniquet);
         h.f32(b.temperature_c);
         h.boolean(b.ignited);
         h.f32(b.fuel_s);
@@ -1809,6 +1982,7 @@ uint64_t World::state_hash() const {
         h.f32(b.armour_strength_pa);
         h.boolean(b.armour_soft);
         h.u8(static_cast<uint8_t>(b.component));
+        h.f32(b.thrust_force);
         h.boolean(b.signal);
         h.boolean(b.signal_in);
         h.u32(b.compartment_count);
@@ -1831,8 +2005,17 @@ uint64_t World::state_hash() const {
         h.u32(p.generation);
         h.f32(p.pos.x);
         h.f32(p.pos.y);
+        h.f32(p.prev.x);
+        h.f32(p.prev.y);
         h.f32(p.vel.x);
         h.f32(p.vel.y);
+        h.f32(p.yaw_rad);
+        h.f32(p.mass);
+        h.f32(p.radius);
+        h.f32(p.drag_k);
+        h.f32(p.fragmentation_speed);
+        h.u8(p.fragments);
+        h.f32(p.yaw_gain_per_m);
     }
     h.u32(static_cast<uint32_t>(groups_.size()));
     for (const Vitals& v : groups_) {
@@ -1844,6 +2027,17 @@ uint64_t World::state_hash() const {
         h.boolean(v.arrested);
         h.boolean(v.unconscious);
         h.boolean(v.dead);
+    }
+    // Warm-start impulses are future-affecting state.
+    h.u32(static_cast<uint32_t>(prev_contacts_.size()));
+    for (const Contact& c : prev_contacts_) {
+        h.u32(c.a);
+        h.u32(c.b);
+        h.u32(c.count);
+        for (uint8_t k = 0; k < c.count; ++k) {
+            h.f32(c.pt[k].normal_impulse);
+            h.f32(c.pt[k].tangent_impulse);
+        }
     }
     h.u32(joint_count_);
     for (uint32_t i = 0; i < joints_.size(); ++i) {
@@ -1862,6 +2056,12 @@ uint64_t World::state_hash() const {
         h.f32(j.ref_angle);
         h.f32(j.break_force);
         h.f32(j.break_torque);
+        h.f32(j.yield_torque);
+        h.boolean(j.has_limit);
+        h.f32(j.limit_min);
+        h.f32(j.limit_max);
+        h.f32(j.motor_speed);
+        h.f32(j.motor_torque);
         h.f32(j.force_ema);
         h.f32(j.torque_ema);
     }

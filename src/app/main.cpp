@@ -3,8 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "render/gl_api.h"
@@ -36,6 +39,29 @@ struct Camera {
     }
 };
 
+struct Stats {
+    double avg = 0.0;
+    double p50 = 0.0;
+    double p99 = 0.0;
+    double max = 0.0;
+    int n = 0;
+};
+
+Stats stats_of(const double* values, int count) {
+    Stats s;
+    if (count <= 0) return s;
+    std::vector<double> sorted(values, values + count);
+    std::sort(sorted.begin(), sorted.end());
+    double sum = 0.0;
+    for (double v : sorted) sum += v;
+    s.n = count;
+    s.avg = sum / static_cast<double>(count);
+    s.p50 = sorted[static_cast<std::size_t>((count - 1) * 50 / 100)];
+    s.p99 = sorted[static_cast<std::size_t>((count - 1) * 99 / 100)];
+    s.max = sorted.back();
+    return s;
+}
+
 void build_scene(World& w) {
     w.clear();
     w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
@@ -56,9 +82,47 @@ void build_scene(World& w) {
 
 } // namespace
 
-int main(int, char**) {
+int main(int argc, char** argv) {
+    int bench_frames = 0;
+    int startup_threads = 1;
+    bool self_test = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
+            bench_frames = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--threads") == 0 && i + 1 < argc) {
+            startup_threads = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--self-test") == 0) {
+            self_test = true;
+        }
+    }
     SDL_SetMainReady();
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
+    if (self_test) {
+        if (SDL_Init(SDL_INIT_TIMER) != 0) {
+            std::fprintf(stderr, "self-test: SDL init failed: %s\n", SDL_GetError());
+            return 2;
+        }
+        World w;
+        build_scene(w);
+        w.set_thread_count(1);
+        InputFrame in;
+        for (int i = 0; i < 240; ++i) w.step(in);
+        bool finite = true;
+        w.for_each([&](BodyId, const Body& b) {
+            finite = finite && std::isfinite(b.pos.x) && std::isfinite(b.pos.y) &&
+                     std::isfinite(b.vel.x) && std::isfinite(b.vel.y) &&
+                     std::isfinite(b.angle);
+        });
+        const uint64_t hash = w.state_hash();
+        const uint64_t periodic = w.last_periodic_hash();
+        const bool ok = finite && w.body_count() > 0 && hash != 0 && periodic != 0;
+        std::printf("SELF-TEST %s bodies=%u contacts=%u hash=%016llx periodic=%016llx\n",
+                    ok ? "OK" : "FAILED", w.body_count(), w.contact_count(),
+                    static_cast<unsigned long long>(hash),
+                    static_cast<unsigned long long>(periodic));
+        SDL_Quit();
+        return ok ? 0 : 3;
+    }
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
@@ -83,7 +147,8 @@ int main(int, char**) {
         SDL_Quit();
         return 1;
     }
-    SDL_GL_SetSwapInterval(1);
+    SDL_GL_SetSwapInterval(bench_frames > 0 ? 0 : 1);
+    SDL_StartTextInput();
 
     if (!glapi::load()) {
         std::fprintf(stderr, "failed to load GL entry points\n");
@@ -114,6 +179,138 @@ int main(int, char**) {
     BodyId weld_first{};
     Vec2 weld_point{};
     int ammo_index = 0;
+    world.set_thread_count(startup_threads);
+
+    bool console_open = false;
+    std::string console_text;
+    std::string console_out = "console ready: help";
+    bool panning = false;
+    int pan_x = 0;
+    int pan_y = 0;
+    double sim_ms[4096]{};
+    int sim_ms_count = 0;
+    double render_ms[4096]{};
+    int render_ms_count = 0;
+
+    const auto now_s = [] {
+        return static_cast<double>(SDL_GetPerformanceCounter()) /
+               static_cast<double>(SDL_GetPerformanceFrequency());
+    };
+
+    auto stats_text = [](const char* name, const Stats& st) {
+        char buf[160];
+        std::snprintf(buf, sizeof buf, "%s n=%d avg=%.3f p50=%.3f p99=%.3f max=%.3f ms",
+                      name, st.n, st.avg, st.p50, st.p99, st.max);
+        return std::string(buf);
+    };
+
+    auto execute_console = [&](const std::string& line) {
+        std::istringstream iss(line);
+        std::string cmd;
+        iss >> cmd;
+        std::ostringstream out;
+        if (cmd.empty()) {
+            return;
+        } else if (cmd == "help") {
+            out << "spawn circle|box|ragdoll|rope|cloth|blob|glass|battery|button|thruster"
+                   "; set gravity <y>|<x y>; set threads <n>; pause <0|1>; measure; profile; dump; hash; kill";
+        } else if (cmd == "spawn") {
+            std::string what;
+            iss >> what;
+            if (what == "circle") world.add_circle(mouse_world, 0.25f);
+            else if (what == "box") world.add_box(mouse_world, Vec2{0.4f, 0.4f});
+            else if (what == "ragdoll") spawn_ragdoll(world, mouse_world);
+            else if (what == "rope") spawn_rope(world, mouse_world, 10, 0.22f, 0.045f, 0.0f);
+            else if (what == "cloth") spawn_cloth(world, mouse_world, 6, 4, 0.12f, 0.03f);
+            else if (what == "blob") spawn_soft_blob(world, mouse_world, 8, 0.35f);
+            else if (what == "glass") {
+                const BodyId pane = world.add_static_box(mouse_world, Vec2{0.5f, 0.5f});
+                world.set_material(pane, MaterialId::Glass);
+            } else if (what == "battery") {
+                const BodyId b = world.add_static_box(mouse_world, Vec2{0.10f, 0.07f});
+                world.set_battery(b, 220.0f);
+            } else if (what == "button") {
+                const BodyId b = world.add_static_box(mouse_world, Vec2{0.12f, 0.08f});
+                world.set_component(b, Component::Button);
+            } else if (what == "thruster") {
+                const BodyId b = world.add_box(mouse_world, Vec2{0.20f, 0.08f});
+                world.set_component(b, Component::Thruster, 3000.0f);
+            } else {
+                out << "unknown spawn target: " << what;
+            }
+            if (out.tellp() == 0) out << "spawned " << what << " at cursor";
+        } else if (cmd == "set") {
+            std::string key;
+            iss >> key;
+            if (key == "threads") {
+                int n = 1;
+                iss >> n;
+                world.set_thread_count(n);
+                out << "threads " << world.thread_count();
+            } else if (key == "gravity") {
+                float a = 0.0f;
+                float b = 0.0f;
+                if (iss >> a) {
+                    if (iss >> b) {
+                        world.set_gravity(Vec2{a, b});
+                    } else {
+                        world.set_gravity(Vec2{0.0f, -a});
+                    }
+                    out << "gravity " << world.gravity().x << " " << world.gravity().y;
+                } else {
+                    out << "usage: set gravity <y>|<x y>";
+                }
+            } else {
+                out << "unknown set key: " << key;
+            }
+        } else if (cmd == "pause") {
+            int p = 1;
+            iss >> p;
+            paused = p != 0;
+            out << (paused ? "paused" : "running");
+        } else if (cmd == "measure") {
+            out << "bodies=" << world.body_count() << " contacts=" << world.contact_count()
+                << " joints=" << world.joint_count() << " groups=" << world.group_count()
+                << " wires=" << world.wires().size() << " wounds=" << world.wounds().size();
+        } else if (cmd == "profile") {
+            out << stats_text("sim", stats_of(sim_ms, sim_ms_count)) << " | "
+                << stats_text("render", stats_of(render_ms, render_ms_count));
+        } else if (cmd == "dump") {
+            double blood_min = -1.0;
+            int dead = 0;
+            for (uint32_t g = 0; g < world.group_count(); ++g) {
+                const Vitals& v = world.vitals(g);
+                if (blood_min < 0.0 || v.blood_ml < blood_min) blood_min = v.blood_ml;
+                dead += v.dead ? 1 : 0;
+            }
+            char buf[256];
+            std::snprintf(buf, sizeof buf,
+                          "hash=%016llx bodies=%u contacts=%u joints=%u groups=%u dead=%d blood=%.0f "
+                          "wounds=%zu burning=%d wires=%zu",
+                          static_cast<unsigned long long>(world.state_hash()),
+                          world.body_count(), world.contact_count(), world.joint_count(),
+                          world.group_count(), dead, blood_min, world.wounds().size(),
+                          world.burning_count(), world.wires().size());
+            out << buf;
+        } else if (cmd == "hash") {
+            char buf[64];
+            std::snprintf(buf, sizeof buf, "%016llx",
+                          static_cast<unsigned long long>(world.state_hash()));
+            out << buf;
+        } else if (cmd == "kill") {
+            const BodyId hit = world.pick(mouse_world);
+            if (hit.valid()) {
+                world.remove(hit);
+                out << "removed body";
+            } else {
+                out << "nothing under cursor";
+            }
+        } else {
+            out << "unknown command: " << cmd << " (try help)";
+        }
+        console_out = out.str();
+        std::printf("console> %s\n", console_out.c_str());
+    };
 
     struct ReplayFrame {
         BodyId grab{};
@@ -182,8 +379,46 @@ int main(int, char**) {
                 width = e.window.data1;
                 height = e.window.data2;
             }
+            if (e.type == SDL_TEXTINPUT && console_open) {
+                console_text += e.text.text;
+                continue;
+            }
+            if (e.type == SDL_KEYUP && e.key.keysym.sym == SDLK_BACKQUOTE) {
+                console_open = !console_open;
+                console_text.clear();
+                continue;
+            }
+            if (console_open) {
+                if (e.type == SDL_KEYDOWN) {
+                    if (e.key.keysym.sym == SDLK_ESCAPE) {
+                        console_open = false;
+                    } else if (e.key.keysym.sym == SDLK_RETURN ||
+                               e.key.keysym.sym == SDLK_KP_ENTER) {
+                        execute_console(console_text);
+                        console_text.clear();
+                    } else if (e.key.keysym.sym == SDLK_BACKSPACE && !console_text.empty()) {
+                        console_text.pop_back();
+                    }
+                }
+                continue;
+            }
+            if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_MIDDLE) {
+                panning = true;
+                pan_x = e.button.x;
+                pan_y = e.button.y;
+            }
             if (e.type == SDL_MOUSEMOTION) {
                 mouse_world = cam.screen_to_world(e.motion.x, e.motion.y, width, height);
+                if (panning) {
+                    const float scale = cam.view_height / static_cast<float>(std::max(1, height));
+                    cam.center.x -= static_cast<float>(e.motion.x - pan_x) * scale;
+                    cam.center.y += static_cast<float>(e.motion.y - pan_y) * scale;
+                    pan_x = e.motion.x;
+                    pan_y = e.motion.y;
+                }
+            }
+            if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_MIDDLE) {
+                panning = false;
             }
             if (e.type == SDL_MOUSEBUTTONDOWN) {
                 const Vec2 p = cam.screen_to_world(e.button.x, e.button.y, width, height);
@@ -517,7 +752,11 @@ int main(int, char**) {
                     record_frames.push_back(ReplayFrame{in.grab, in.grab_target,
                                                         in.grab_active});
                 }
+                const double step_start = now_s();
                 world.step(in);
+                if (sim_ms_count < 4096) {
+                    sim_ms[sim_ms_count++] = (now_s() - step_start) * 1000.0;
+                }
                 if (playing && play_index >= play_frames.size()) {
                     const uint64_t actual = world.state_hash();
                     std::printf("replay %s (hash %016llx expected %016llx)\n",
@@ -578,6 +817,7 @@ int main(int, char**) {
                         blood.end());
         }
 
+        const double render_start = now_s();
         renderer.begin(width, height, cam.center, cam.view_height);
         world.for_each([&](BodyId id, const Body& b) {
             render::Color color;
@@ -710,12 +950,30 @@ int main(int, char**) {
             renderer.text(sim::Vec2{tl.x, tl.y - 0.84f}, 0.03f,
                           render::Color{0.55f, 0.58f, 0.65f, 1.0f},
                           "LMB GRAB  F FIRE  1-3 AMMO  4-8 TREAT  9/0 ARMOUR  H RAG  L CLOTH  P BATTERY");
+            renderer.text(sim::Vec2{tl.x, tl.y - 1.12f}, 0.03f,
+                          render::Color{0.55f, 0.58f, 0.65f, 1.0f},
+                          "` CONSOLE  MMB PAN  WHEEL ZOOM  F5/F9 SAVE/LOAD  F6/F7 REC/REPLAY");
+            if (console_open) {
+                char input_buf[192];
+                std::snprintf(input_buf, sizeof input_buf, "> %s_",
+                              console_text.c_str());
+                renderer.text(sim::Vec2{tl.x, tl.y - 1.55f}, 0.032f,
+                              render::Color{1.0f, 0.85f, 0.35f, 1.0f}, input_buf);
+                char shown[112];
+                std::snprintf(shown, sizeof shown, "%.96s", console_out.c_str());
+                renderer.text(sim::Vec2{tl.x, tl.y - 1.86f}, 0.028f,
+                              render::Color{0.75f, 0.78f, 0.85f, 1.0f}, shown);
+            }
         }
         renderer.end();
         SDL_GL_SwapWindow(window);
+        if (render_ms_count < 4096) {
+            render_ms[render_ms_count++] = (now_s() - render_start) * 1000.0;
+        }
         audio.update();
 
         ++frame;
+        if (bench_frames > 0 && frame >= bench_frames) running = false;
         if (frame % 120 == 0) {
             const Uint64 now_ms = SDL_GetTicks64();
             const double fps = 120000.0 / static_cast<double>(now_ms - fps_start + 1);
@@ -732,6 +990,16 @@ int main(int, char**) {
                         sim::allocation_count());
             fps_start = now_ms;
         }
+    }
+
+    if (bench_frames > 0) {
+        const Stats sim_stats = stats_of(sim_ms, sim_ms_count);
+        const Stats render_stats = stats_of(render_ms, render_ms_count);
+        std::printf("BENCH frames=%d bodies=%u contacts=%u sim(ms) avg=%.3f p50=%.3f p99=%.3f max=%.3f "
+                    "render(ms) avg=%.3f p50=%.3f p99=%.3f max=%.3f\n",
+                    frame, world.body_count(), world.contact_count(),
+                    sim_stats.avg, sim_stats.p50, sim_stats.p99, sim_stats.max,
+                    render_stats.avg, render_stats.p50, render_stats.p99, render_stats.max);
     }
 
     audio.shutdown();

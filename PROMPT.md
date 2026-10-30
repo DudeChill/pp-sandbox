@@ -373,6 +373,8 @@ Controls (documented in README):
 | B / K | spawn box / glass pane |
 | G / C / T / V / M / Z | weld / cut / tourniquet / blade / motor / wire tools |
 | N / Y | spawn button / thruster |
+| MMB drag / wheel | pan / zoom the camera |
+| `` ` `` | dev console: spawn, set gravity/threads, pause, measure, profile, dump, hash |
 | I | ignite body under cursor |
 | E | 8 kJ explosion at cursor |
 | X | delete body |
@@ -387,7 +389,7 @@ Controls (documented in README):
 
 Headless, deterministic, CI-gated; the suite must contain at least the 48 behaviours below (grouped). Tolerances are part of the contract.
 
-**Core physics (9):** free-fall displacement; circle at rest on a floor; five-box stack; six-box tower for 30 s at a non-zero x (clipping-plane regression); momentum conservation without damping; determinism across two worlds (3,000 ticks); zero allocations in `step()` after warm-up; stale handles rejected; picking returns the topmost body.
+**Core physics (9):** free-fall displacement; circle at rest on a floor; five-box stack; six-box tower for 30 s at a non-zero x (clipping-plane regression); momentum conservation without damping; determinism across worlds over 3,000 ticks at 1/2/4 broadphase workers; zero allocations in `step()` after warm-up; stale handles rejected; picking returns the topmost body.
 
 **Performance (1):** 500 bodies sustain the 60 fps step budget.
 

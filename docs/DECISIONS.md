@@ -55,11 +55,13 @@ contact therefore never sleeps, costing a little CPU but staying stable.
 **Revisit.** Island-based sleeping in M1 when ragdolls and many contacts exist.
 
 ## D008 — Determinism scope
-**Choice.** Bitwise identical state for a given build and thread count; a
-replay stores the parameter hash and refuses mismatched loads.
+**Choice.** Bitwise identical state for a given build and for 1/2/4 broadphase
+workers; a replay stores the parameter hash and refuses mismatched loads.
 **Reason.** Cross-compiler bitwise equality is not achievable without fixed
 point. FP contraction is disabled, fast-math is forbidden, and hashing uses a
-streaming xxHash64 over declaration-ordered fields.
+streaming xxHash64 over declaration-ordered fields. Broadphase workers write
+private chunks that are merged in chunk order before the canonical contact
+sort, so scheduling cannot change the result.
 **Revisit.** Add fixed-point or an FP-contract-controlled toolchain if
 cross-machine replays are required.
 
@@ -183,3 +185,33 @@ blob is a braced ring. Both are tearable and use the existing solver.
 **Reason.** Gives cloth/soft-body behaviour without a new solver; tests cover
 drape and constraint retention.
 **Revisit.** Add area/volume constraints and a dedicated PBD pass if needed.
+
+## D024 — Parallel broadphase
+**Choice.** `World::set_thread_count(n)` grows a process-wide pool (max 8);
+`n` workers split the sorted sweep list into contiguous ranges. Each worker
+fills a preallocated contact buffer; the main thread merges buffers in range
+order, then the existing `(a,b)` sort canonicalizes them. Waking asleep bodies
+is deferred until after the merge so workers never write shared flags.
+**Reason.** Gives real parallel work with deterministic results and zero
+per-step allocation, and makes the 1/2/4-worker hash gate testable.
+**Revisit.** Parallelize narrowphase/solver only after island partitioning;
+keep fixed merge order.
+
+## D025 — In-game dev console
+**Choice.** The backtick console executes a small line grammar (`spawn`,
+`set gravity|threads`, `pause`, `measure`, `profile`, `dump`, `hash`, `kill`).
+Text input is captured before game hotkeys; output is mirrored to stdout.
+**Reason.** Satisfies the M0 dev-console gate and makes numeric state
+inspectable without a debugger.
+**Revisit.** Add scene-file and replay console commands when tooling grows.
+
+## D026 — Blood death threshold
+**Conflict.** The prompt lists "dead below 900 ml" but also requires a 180 s
+brain-death window, transfusion plus defibrillation reversal, and a test that a
+group at 600 ml is arrested but not yet dead.
+**Choice.** Blood below 700 ml causes arrest; death follows after 180 s of
+arrest or hypoxia ≥ 1.0. Defibrillation clears arrest only above 1,200 ml.
+**Evidence.** `transfusion and defibrillation reverse hemorrhagic arrest` passes;
+`PHYSICS.md` carries the 0.7 L arrest threshold.
+**Revisit.** If immediate 0.9 L death is required, remove the reversal window and
+update the acceptance test and treatment contract together.

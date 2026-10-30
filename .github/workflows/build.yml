@@ -23,6 +23,8 @@ jobs:
         run: ./build/pp_tests
       - name: Bench
         run: ./build/pp_bench
+      - name: Runtime smoke test
+        run: ./build/pp --self-test
 
   windows:
     runs-on: windows-latest
@@ -52,6 +54,8 @@ jobs:
             if (Test-Path $p) { Copy-Item $p dist/ }
           }
           Get-ChildItem dist
+      - name: Runtime smoke test
+        run: ./dist/pp.exe --self-test
 
       - name: Upload runtime
         uses: actions/upload-artifact@v4

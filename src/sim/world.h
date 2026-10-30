@@ -99,7 +99,7 @@ struct Body {
     Component component = Component::None;
     bool signal = false;
     bool signal_in = false;
-    float thrust_force = 2500.0f;
+    float thrust_force = 3000.0f;
     float voltage = 0.0f;
     float shock_s = 0.0f;
     float armour_thickness_m = 0.0f;
@@ -197,13 +197,17 @@ public:
     void clear();
     void set_gravity(Vec2 g) { gravity_ = g; }
     [[nodiscard]] Vec2 gravity() const { return gravity_; }
+    // Selects the number of broadphase workers (1 = serial). The state hash is
+    // identical for every setting; call outside step().
+    void set_thread_count(int n);
+    [[nodiscard]] int thread_count() const { return thread_count_; }
     void set_material(BodyId id, MaterialId m);
     void apply_tourniquet(BodyId id);
     void add_compartment(BodyId id, Vec2 local_center, Vec2 local_half, TissueKind kind);
     void ignite(BodyId id);
     [[nodiscard]] bool is_burning(BodyId id) const;
     [[nodiscard]] int burning_count() const;
-    void set_component(BodyId id, Component component, float thrust_force = 2500.0f);
+    void set_component(BodyId id, Component component, float thrust_force = 3000.0f);
     void set_battery(BodyId id, float volts);
     void set_armour(BodyId id, float thickness_m, float strength_pa, bool soft);
     void apply_iv(BodyId id, float ml);
@@ -231,6 +235,8 @@ public:
     [[nodiscard]] uint32_t body_count() const { return count_; }
     [[nodiscard]] uint32_t contact_count() const { return contact_count_; }
     [[nodiscard]] uint64_t state_hash() const;
+    // Hash captured automatically at the end of every 60th tick.
+    [[nodiscard]] uint64_t last_periodic_hash() const { return periodic_hash_; }
     [[nodiscard]] BodyId pick(Vec2 point) const;
     [[nodiscard]] const std::vector<Contact>& contacts() const { return contacts_; }
 
@@ -331,6 +337,8 @@ private:
     uint64_t tick_ = 0;
     uint32_t count_ = 0;
     uint32_t contact_count_ = 0;
+    uint64_t periodic_hash_ = 0;
+    int thread_count_ = 1;
 };
 
 } // namespace sim

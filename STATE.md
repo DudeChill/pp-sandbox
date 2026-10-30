@@ -8,9 +8,12 @@
 - CI run `41009696522` and successors: linux + windows success; Windows artifact
   `pp-windows-x64` bundles `pp.exe`, `SDL2.dll`, VC++ runtime.
 - Benchmark (`pp_bench`, 1,500 bodies): ~1.0–1.5 ms average, p99 ≤ 2.3 ms.
-- Zero heap allocations inside `World::step()` after warm-up (asserted).
-- Determinism: identical hashes across worlds over thousands of ticks; scene
-  round-trip and 600-frame replay reproduce the stored hash.
+- Render benchmark (`pp --frames 300 --threads 4`, llvmpipe, 1280×720):
+  render avg 3.15 ms, p99 6.74 ms (budget 8 ms); self-test passes headless.
+- Zero heap allocations inside `World::step()` after warm-up (asserted), also
+  with two broadphase workers.
+- Determinism: identical hashes across 1/2/4 broadphase workers over 3,000
+  ticks; scene round-trip and 600-frame replay reproduce the stored hash.
 
 ## Implemented
 M0 core: fixed-step solver, contacts, projection, sleeping, renderer, harness.
@@ -29,7 +32,9 @@ M7 depth: barrel-length velocity, zeroing, yaw, temporary cavity, armour,
 IV/blood/defib/chest seal/splint, arrest and hypoxia.
 M8 systems: 220 V electricity via the wire graph, procedural audio with
 distance-delayed crack, mass-spring cloth and soft blobs.
-M9 integration: docs, prompt/count alignment, cross-platform packaging.
+M9 integration: docs, prompt/count alignment, cross-platform packaging,
+deterministic multi-thread broadphase, in-game dev console, camera pan,
+`--frames/--threads` timing runs.
 
 ## Known limitations (explicit)
 - Continuous FEM/mass-spring fracture is not implemented; welds use plastic
@@ -37,7 +42,8 @@ M9 integration: docs, prompt/count alignment, cross-platform packaging.
 - Wound channels use body-local AABBs, not polygon compartments; no bone
   blocking.
 - Blood particles are cosmetic; the scalar budget is authoritative.
-- No multithreading; determinism is per build and thread count.
+- Parallelism is limited to broadphase collision tests; solver and physiology
+  stay serial. Determinism is per build, not cross-compiler.
 - Renderer and audio are deliberately minimal (no assets, debug-grade).
 
 ## Performance log

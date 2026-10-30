@@ -77,7 +77,7 @@ Ragdoll spawn_ragdoll(World& world, Vec2 feet_pos) {
         world.add_compartment(r.parts[i], Vec2{0.0f, 0.0f},
                               Vec2{h.x * 0.8f, h.y * 0.8f}, TissueKind::Muscle);
         if (i == 0) {
-            world.add_compartment(r.parts[i], Vec2{0.0f, h.y * 0.05f},
+            world.add_compartment(r.parts[i], Vec2{h.x * 0.10f, h.y * 0.05f},
                                   Vec2{h.x * 0.55f, h.y * 0.55f}, TissueKind::Brain);
         } else if (i == 1) {
             world.add_compartment(r.parts[i], Vec2{-h.x * 0.25f, h.y * 0.15f},

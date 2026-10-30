@@ -102,13 +102,22 @@ TEST_CASE("deterministic across runs") {
 
     World w1 = build();
     World w2 = build();
+    World w4 = build();
+    w1.set_thread_count(1);
+    w2.set_thread_count(2);
+    w4.set_thread_count(4);
     InputFrame in;
     for (int i = 0; i < 3000; ++i) {
         w1.step(in);
         w2.step(in);
-        if ((i % 100) == 0) CHECK(w1.state_hash() == w2.state_hash());
+        w4.step(in);
+        if ((i % 100) == 0) {
+            CHECK(w1.state_hash() == w2.state_hash());
+            CHECK(w1.state_hash() == w4.state_hash());
+        }
     }
     CHECK(w1.state_hash() == w2.state_hash());
+    CHECK(w1.state_hash() == w4.state_hash());
 }
 
 TEST_CASE("step performs no heap allocation after warmup") {
@@ -117,6 +126,7 @@ TEST_CASE("step performs no heap allocation after warmup") {
         w.add_box(Vec2{static_cast<float>(i % 4) * 1.05f, 0.6f + static_cast<float>(i / 4)},
                   Vec2{0.5f, 0.5f});
     }
+    w.set_thread_count(2);
     InputFrame in;
     for (int i = 0; i < 16; ++i) w.step(in);
 
@@ -461,7 +471,7 @@ TEST_CASE("repeated blade strokes sever a limb at its joint") {
 TEST_CASE("scene binary round-trip preserves state and future evolution") {
     World w;
     w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
-    Ragdoll r = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+    spawn_ragdoll(w, Vec2{0.0f, 0.02f});
     w.spawn_projectile(Vec2{-2.0f, 0.66f}, Vec2{350.0f, 0.0f}, 0.008f, 0.0045f, 0.0f);
     w.add_box(Vec2{3.0f, 4.0f}, Vec2{0.3f, 0.3f});
     InputFrame in;
