@@ -19,6 +19,8 @@ jobs:
         run: cmake --build build -j2
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Test details
+        run: ./build/pp_tests
       - name: Bench
         run: ./build/pp_bench
 
@@ -34,6 +36,8 @@ jobs:
         run: cmake --build build --config Release -j2
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Test details
+        run: ./build/Release/pp_tests.exe
       - name: Bench
         run: ./build/Release/pp_bench.exe
       - name: Stage runtime
