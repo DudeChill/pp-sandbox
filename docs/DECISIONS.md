@@ -215,3 +215,13 @@ arrest or hypoxia ≥ 1.0. Defibrillation clears arrest only above 1,200 ml.
 `PHYSICS.md` carries the 0.7 L arrest threshold.
 **Revisit.** If immediate 0.9 L death is required, remove the reversal window and
 update the acceptance test and treatment contract together.
+
+## D027 — Unbuffered stdout
+**Symptom.** `pp.exe --self-test` fast-failed with 0xC0000409 on Windows before
+any output.
+**Cause.** `setvbuf(stdout, nullptr, _IOLBF, 0)` is rejected by the MSVC CRT's
+invalid-parameter handler (a null buffer with a buffering mode), which
+fast-fails.
+**Fix.** Use `_IONBF`; smoke-tested in CI with the staged DLL/CRT bundle.
+**Lesson.** Windows runtime smoke tests must run the packaged artifact, not
+only the build-tree binary.

@@ -83,8 +83,6 @@ void build_scene(World& w) {
 } // namespace
 
 int main(int argc, char** argv) {
-    std::fprintf(stderr, "pp: main entered (argc=%d)\n", argc);
-    std::fflush(stderr);
     int bench_frames = 0;
     int startup_threads = 1;
     bool self_test = false;
@@ -98,14 +96,10 @@ int main(int argc, char** argv) {
         }
     }
     SDL_SetMainReady();
+    // Unbuffered: line buffering with a null buffer trips the MSVC invalid
+    // parameter handler (fast-fail 0xC0000409) on Windows.
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    std::fprintf(stderr, "pp: after setvbuf\n");
-    std::fflush(stderr);
     if (self_test) {
-        std::printf("SELF-TEST starting\n");
-        std::fflush(stdout);
-        std::fprintf(stderr, "pp: self-test block\n");
-        std::fflush(stderr);
         if (SDL_Init(SDL_INIT_TIMER) != 0) {
             std::fprintf(stderr, "self-test: SDL init failed: %s\n", SDL_GetError());
             return 2;
@@ -113,12 +107,8 @@ int main(int argc, char** argv) {
         World w;
         build_scene(w);
         w.set_thread_count(1);
-        std::fprintf(stderr, "pp: self-test world ready\n");
-        std::fflush(stderr);
         InputFrame in;
         for (int i = 0; i < 240; ++i) w.step(in);
-        std::fprintf(stderr, "pp: self-test steps done\n");
-        std::fflush(stderr);
         bool finite = true;
         w.for_each([&](BodyId, const Body& b) {
             finite = finite && std::isfinite(b.pos.x) && std::isfinite(b.pos.y) &&

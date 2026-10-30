@@ -6,3 +6,5 @@ artifacts/
 .cache/
 compile_commands.json
 scene.ppb
+
+*.ppr
