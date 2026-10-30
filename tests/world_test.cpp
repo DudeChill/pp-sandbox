@@ -673,3 +673,15 @@ TEST_CASE("burning damages tissue and eventually kills a vital part") {
     CHECK(w.get(head).health < 0.5f);
     CHECK(w.vitals(w.get(head).group).dead);
 }
+
+TEST_CASE("a 900 m/s projectile cannot tunnel through a 1 mm plate") {
+    World w;
+    const BodyId plate = w.add_static_box(Vec2{0.0f, 0.0f}, Vec2{0.0005f, 0.5f});
+    w.set_material(plate, MaterialId::Steel);
+    const ProjectileId p = w.spawn_projectile(Vec2{-1.0f, 0.0f}, Vec2{900.0f, 0.0f},
+                                              0.008f, 0.0045f, 0.0f);
+    InputFrame in;
+    for (int i = 0; i < 10; ++i) w.step(in);
+    CHECK(w.wounds().size() == 1);
+    (void)p;
+}
