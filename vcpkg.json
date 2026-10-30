@@ -1,0 +1,8 @@
+{
+  "name": "pp-sandbox",
+  "version-string": "0.1.0",
+  "description": "Deterministic 2D physics sandbox with trauma, ballistics and materials.",
+  "dependencies": [
+    "sdl2"
+  ]
+}

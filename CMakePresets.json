@@ -6,7 +6,8 @@
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "PP_SDL2_ROOT": "$env{HOME}/.local/opt/ppdeps"
+        "PP_SDL2_ROOT": "$env{HOME}/.local/opt/ppdeps",
+        "PP_SDL2_LIBRARY": "/usr/lib/x86_64-linux-gnu/libSDL2-2.0.so.0"
       }
     },
     {
@@ -16,7 +17,8 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined",
-        "PP_SDL2_ROOT": "$env{HOME}/.local/opt/ppdeps"
+        "PP_SDL2_ROOT": "$env{HOME}/.local/opt/ppdeps",
+        "PP_SDL2_LIBRARY": "/usr/lib/x86_64-linux-gnu/libSDL2-2.0.so.0"
       }
     }
   ],

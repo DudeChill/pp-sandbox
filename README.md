@@ -43,19 +43,33 @@ secondary systems, content) are not implemented yet. See `STATE.md`.
 
 ## Build
 
-The host lacks SDL2 development headers. Fetch them into the user prefix once:
+### Windows 10/11 (x64)
 
-```sh
-./scripts/setup_deps.sh          # extracts libsdl2-dev into ~/.local/opt/ppdeps
+Requirements: Visual Studio 2022 Build Tools (Desktop development with C++),
+CMake 3.25+, and [vcpkg](https://github.com/microsoft/vcpkg) with SDL2.
+
+```bat
+vcpkg install sdl2 --triplet x64-windows
+cmake -S . -B build -A x64 ^
+  -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
+cmake --build build --config Release -j
+ctest --test-dir build -C Release --output-on-failure
+build\Release\pp.exe
 ```
 
-Then:
+The build links SDL2 dynamically and vcpkg copies `SDL2.dll` next to the
+executable. If it is missing, copy `SDL2.dll` from
+`%VCPKG_ROOT%\installed\x64-windows\bin`. The simulation and tests build
+without SDL using `-DPP_BUILD_APP=OFF`.
+
+### Linux
 
 ```sh
-cmake --preset release           # or: cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
+sudo apt-get install libsdl2-dev    # or: ./scripts/setup_deps.sh (user prefix)
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
 cmake --build build/release -j2
 ctest --test-dir build/release --output-on-failure
-./build/release/pp               # needs an X display, e.g. DISPLAY=:98
+./build/release/pp                  # needs an X display, e.g. DISPLAY=:98
 ```
 
 Debug preset enables ASan/UBSan:

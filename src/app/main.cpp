@@ -1,4 +1,4 @@
-#include <SDL2/SDL.h>
+#include "platform/sdl.h"
 
 #include <algorithm>
 #include <cmath>
@@ -54,6 +54,7 @@ void build_scene(World& w) {
 } // namespace
 
 int main(int, char**) {
+    SDL_SetMainReady();
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -618,6 +619,7 @@ int main(int, char**) {
                 case Tool::Tourniquet: tool_name = "TOURNIQUET"; break;
                 case Tool::Blade: tool_name = "BLADE"; break;
                 case Tool::Motor: tool_name = "MOTOR"; break;
+                case Tool::Wire: tool_name = "WIRE"; break;
                 case Tool::None: break;
             }
             char buf[256];
@@ -631,15 +633,15 @@ int main(int, char**) {
             renderer.text(sim::Vec2{tl.x, tl.y - 0.28f}, 0.035f,
                           render::Color{0.75f, 0.80f, 0.88f, 1.0f}, buf);
 
-            double blood = -1.0;
+            double blood_min = -1.0;
             int dead = 0;
             for (uint32_t g = 0; g < world.group_count(); ++g) {
                 const Vitals& v = world.vitals(g);
-                if (blood < 0.0 || v.blood_ml < blood) blood = v.blood_ml;
+                if (blood_min < 0.0 || v.blood_ml < blood_min) blood_min = v.blood_ml;
                 dead += v.dead ? 1 : 0;
             }
             if (world.group_count() > 0) {
-                std::snprintf(buf, sizeof buf, "BLOOD: %.0f ML  DEAD: %d", blood, dead);
+                std::snprintf(buf, sizeof buf, "BLOOD: %.0f ML  DEAD: %d", blood_min, dead);
             } else {
                 std::snprintf(buf, sizeof buf, "BLOOD: --  DEAD: 0");
             }

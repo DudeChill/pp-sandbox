@@ -1,0 +1,46 @@
+name: build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Bench
+        run: ./build/pp_bench
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >
+          cmake -S . -B build -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+      - name: Build
+        run: cmake --build build --config Release -j2
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Bench
+        run: ./build/Release/pp_bench.exe
+      - name: Upload runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: pp-windows-x64
+          path: |
+            build/Release/pp.exe
+            build/Release/*.dll
+          if-no-files-found: error

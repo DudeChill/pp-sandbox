@@ -1,5 +1,13 @@
 #pragma once
 
+#include <cstddef>
+
+#if defined(_WIN32)
+#  define PP_GLAPI __stdcall
+#else
+#  define PP_GLAPI
+#endif
+
 namespace glapi {
 
 using GLuint = unsigned int;
@@ -8,8 +16,8 @@ using GLenum = unsigned int;
 using GLsizei = int;
 using GLboolean = unsigned char;
 using GLchar = char;
-using GLsizeiptr = long;
-using GLintptr = long;
+using GLsizeiptr = std::ptrdiff_t;
+using GLintptr = std::ptrdiff_t;
 using GLfloat = float;
 
 constexpr GLenum kVertexShader = 0x8B31;
@@ -31,40 +39,40 @@ constexpr GLenum kMultisample = 0x809D;
 constexpr GLboolean kFalse = 0;
 constexpr GLboolean kTrue = 1;
 
-extern GLuint (*CreateShader)(GLenum);
-extern void (*ShaderSource)(GLuint, GLsizei, const GLchar* const*, const GLint*);
-extern void (*CompileShader)(GLuint);
-extern void (*GetShaderiv)(GLuint, GLenum, GLint*);
-extern void (*GetShaderInfoLog)(GLuint, GLsizei, GLsizei*, GLchar*);
-extern void (*DeleteShader)(GLuint);
-extern GLuint (*CreateProgram)();
-extern void (*AttachShader)(GLuint, GLuint);
-extern void (*LinkProgram)(GLuint);
-extern void (*GetProgramiv)(GLuint, GLenum, GLint*);
-extern void (*GetProgramInfoLog)(GLuint, GLsizei, GLsizei*, GLchar*);
-extern void (*DeleteProgram)(GLuint);
-extern void (*UseProgram)(GLuint);
-extern void (*GenVertexArrays)(GLsizei, GLuint*);
-extern void (*BindVertexArray)(GLuint);
-extern void (*DeleteVertexArrays)(GLsizei, const GLuint*);
-extern void (*GenBuffers)(GLsizei, GLuint*);
-extern void (*BindBuffer)(GLenum, GLuint);
-extern void (*BufferData)(GLenum, GLsizeiptr, const void*, GLenum);
-extern void (*BufferSubData)(GLenum, GLintptr, GLsizeiptr, const void*);
-extern void (*DeleteBuffers)(GLsizei, const GLuint*);
-extern void (*EnableVertexAttribArray)(GLuint);
-extern void (*VertexAttribPointer)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
-extern void (*VertexAttribDivisor)(GLuint, GLuint);
-extern GLint (*GetUniformLocation)(GLuint, const GLchar*);
-extern void (*UniformMatrix4fv)(GLint, GLsizei, GLboolean, const GLfloat*);
-extern void (*Enable)(GLenum);
-extern void (*Disable)(GLenum);
-extern void (*BlendFunc)(GLenum, GLenum);
-extern void (*ClearColor)(GLfloat, GLfloat, GLfloat, GLfloat);
-extern void (*Clear)(GLenum);
-extern void (*Viewport)(GLint, GLint, GLsizei, GLsizei);
-extern void (*DrawArraysInstanced)(GLenum, GLint, GLsizei, GLsizei);
-extern const unsigned char* (*GetString)(GLenum);
+extern GLuint (PP_GLAPI *CreateShader)(GLenum);
+extern void (PP_GLAPI *ShaderSource)(GLuint, GLsizei, const GLchar* const*, const GLint*);
+extern void (PP_GLAPI *CompileShader)(GLuint);
+extern void (PP_GLAPI *GetShaderiv)(GLuint, GLenum, GLint*);
+extern void (PP_GLAPI *GetShaderInfoLog)(GLuint, GLsizei, GLsizei*, GLchar*);
+extern void (PP_GLAPI *DeleteShader)(GLuint);
+extern GLuint (PP_GLAPI *CreateProgram)();
+extern void (PP_GLAPI *AttachShader)(GLuint, GLuint);
+extern void (PP_GLAPI *LinkProgram)(GLuint);
+extern void (PP_GLAPI *GetProgramiv)(GLuint, GLenum, GLint*);
+extern void (PP_GLAPI *GetProgramInfoLog)(GLuint, GLsizei, GLsizei*, GLchar*);
+extern void (PP_GLAPI *DeleteProgram)(GLuint);
+extern void (PP_GLAPI *UseProgram)(GLuint);
+extern void (PP_GLAPI *GenVertexArrays)(GLsizei, GLuint*);
+extern void (PP_GLAPI *BindVertexArray)(GLuint);
+extern void (PP_GLAPI *DeleteVertexArrays)(GLsizei, const GLuint*);
+extern void (PP_GLAPI *GenBuffers)(GLsizei, GLuint*);
+extern void (PP_GLAPI *BindBuffer)(GLenum, GLuint);
+extern void (PP_GLAPI *BufferData)(GLenum, GLsizeiptr, const void*, GLenum);
+extern void (PP_GLAPI *BufferSubData)(GLenum, GLintptr, GLsizeiptr, const void*);
+extern void (PP_GLAPI *DeleteBuffers)(GLsizei, const GLuint*);
+extern void (PP_GLAPI *EnableVertexAttribArray)(GLuint);
+extern void (PP_GLAPI *VertexAttribPointer)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
+extern void (PP_GLAPI *VertexAttribDivisor)(GLuint, GLuint);
+extern GLint (PP_GLAPI *GetUniformLocation)(GLuint, const GLchar*);
+extern void (PP_GLAPI *UniformMatrix4fv)(GLint, GLsizei, GLboolean, const GLfloat*);
+extern void (PP_GLAPI *Enable)(GLenum);
+extern void (PP_GLAPI *Disable)(GLenum);
+extern void (PP_GLAPI *BlendFunc)(GLenum, GLenum);
+extern void (PP_GLAPI *ClearColor)(GLfloat, GLfloat, GLfloat, GLfloat);
+extern void (PP_GLAPI *Clear)(GLenum);
+extern void (PP_GLAPI *Viewport)(GLint, GLint, GLsizei, GLsizei);
+extern void (PP_GLAPI *DrawArraysInstanced)(GLenum, GLint, GLsizei, GLsizei);
+extern const unsigned char* (PP_GLAPI *GetString)(GLenum);
 
 bool load();
 

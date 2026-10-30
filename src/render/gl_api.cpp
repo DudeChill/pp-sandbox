@@ -2,7 +2,7 @@
 
 #include <cstdio>
 
-#include <SDL2/SDL.h>
+#include "platform/sdl.h"
 
 namespace glapi {
 namespace {
@@ -19,40 +19,40 @@ bool load_fn(T& fn, const char* name) {
 
 } // namespace
 
-GLuint (*CreateShader)(GLenum) = nullptr;
-void (*ShaderSource)(GLuint, GLsizei, const GLchar* const*, const GLint*) = nullptr;
-void (*CompileShader)(GLuint) = nullptr;
-void (*GetShaderiv)(GLuint, GLenum, GLint*) = nullptr;
-void (*GetShaderInfoLog)(GLuint, GLsizei, GLsizei*, GLchar*) = nullptr;
-void (*DeleteShader)(GLuint) = nullptr;
-GLuint (*CreateProgram)() = nullptr;
-void (*AttachShader)(GLuint, GLuint) = nullptr;
-void (*LinkProgram)(GLuint) = nullptr;
-void (*GetProgramiv)(GLuint, GLenum, GLint*) = nullptr;
-void (*GetProgramInfoLog)(GLuint, GLsizei, GLsizei*, GLchar*) = nullptr;
-void (*DeleteProgram)(GLuint) = nullptr;
-void (*UseProgram)(GLuint) = nullptr;
-void (*GenVertexArrays)(GLsizei, GLuint*) = nullptr;
-void (*BindVertexArray)(GLuint) = nullptr;
-void (*DeleteVertexArrays)(GLsizei, const GLuint*) = nullptr;
-void (*GenBuffers)(GLsizei, GLuint*) = nullptr;
-void (*BindBuffer)(GLenum, GLuint) = nullptr;
-void (*BufferData)(GLenum, GLsizeiptr, const void*, GLenum) = nullptr;
-void (*BufferSubData)(GLenum, GLintptr, GLsizeiptr, const void*) = nullptr;
-void (*DeleteBuffers)(GLsizei, const GLuint*) = nullptr;
-void (*EnableVertexAttribArray)(GLuint) = nullptr;
-void (*VertexAttribPointer)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*) = nullptr;
-void (*VertexAttribDivisor)(GLuint, GLuint) = nullptr;
-GLint (*GetUniformLocation)(GLuint, const GLchar*) = nullptr;
-void (*UniformMatrix4fv)(GLint, GLsizei, GLboolean, const GLfloat*) = nullptr;
-void (*Enable)(GLenum) = nullptr;
-void (*Disable)(GLenum) = nullptr;
-void (*BlendFunc)(GLenum, GLenum) = nullptr;
-void (*ClearColor)(GLfloat, GLfloat, GLfloat, GLfloat) = nullptr;
-void (*Clear)(GLenum) = nullptr;
-void (*Viewport)(GLint, GLint, GLsizei, GLsizei) = nullptr;
-void (*DrawArraysInstanced)(GLenum, GLint, GLsizei, GLsizei) = nullptr;
-const unsigned char* (*GetString)(GLenum) = nullptr;
+GLuint (PP_GLAPI *CreateShader)(GLenum) = nullptr;
+void (PP_GLAPI *ShaderSource)(GLuint, GLsizei, const GLchar* const*, const GLint*) = nullptr;
+void (PP_GLAPI *CompileShader)(GLuint) = nullptr;
+void (PP_GLAPI *GetShaderiv)(GLuint, GLenum, GLint*) = nullptr;
+void (PP_GLAPI *GetShaderInfoLog)(GLuint, GLsizei, GLsizei*, GLchar*) = nullptr;
+void (PP_GLAPI *DeleteShader)(GLuint) = nullptr;
+GLuint (PP_GLAPI *CreateProgram)() = nullptr;
+void (PP_GLAPI *AttachShader)(GLuint, GLuint) = nullptr;
+void (PP_GLAPI *LinkProgram)(GLuint) = nullptr;
+void (PP_GLAPI *GetProgramiv)(GLuint, GLenum, GLint*) = nullptr;
+void (PP_GLAPI *GetProgramInfoLog)(GLuint, GLsizei, GLsizei*, GLchar*) = nullptr;
+void (PP_GLAPI *DeleteProgram)(GLuint) = nullptr;
+void (PP_GLAPI *UseProgram)(GLuint) = nullptr;
+void (PP_GLAPI *GenVertexArrays)(GLsizei, GLuint*) = nullptr;
+void (PP_GLAPI *BindVertexArray)(GLuint) = nullptr;
+void (PP_GLAPI *DeleteVertexArrays)(GLsizei, const GLuint*) = nullptr;
+void (PP_GLAPI *GenBuffers)(GLsizei, GLuint*) = nullptr;
+void (PP_GLAPI *BindBuffer)(GLenum, GLuint) = nullptr;
+void (PP_GLAPI *BufferData)(GLenum, GLsizeiptr, const void*, GLenum) = nullptr;
+void (PP_GLAPI *BufferSubData)(GLenum, GLintptr, GLsizeiptr, const void*) = nullptr;
+void (PP_GLAPI *DeleteBuffers)(GLsizei, const GLuint*) = nullptr;
+void (PP_GLAPI *EnableVertexAttribArray)(GLuint) = nullptr;
+void (PP_GLAPI *VertexAttribPointer)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*) = nullptr;
+void (PP_GLAPI *VertexAttribDivisor)(GLuint, GLuint) = nullptr;
+GLint (PP_GLAPI *GetUniformLocation)(GLuint, const GLchar*) = nullptr;
+void (PP_GLAPI *UniformMatrix4fv)(GLint, GLsizei, GLboolean, const GLfloat*) = nullptr;
+void (PP_GLAPI *Enable)(GLenum) = nullptr;
+void (PP_GLAPI *Disable)(GLenum) = nullptr;
+void (PP_GLAPI *BlendFunc)(GLenum, GLenum) = nullptr;
+void (PP_GLAPI *ClearColor)(GLfloat, GLfloat, GLfloat, GLfloat) = nullptr;
+void (PP_GLAPI *Clear)(GLenum) = nullptr;
+void (PP_GLAPI *Viewport)(GLint, GLint, GLsizei, GLsizei) = nullptr;
+void (PP_GLAPI *DrawArraysInstanced)(GLenum, GLint, GLsizei, GLsizei) = nullptr;
+const unsigned char* (PP_GLAPI *GetString)(GLenum) = nullptr;
 
 bool load() {
     bool ok = true;
