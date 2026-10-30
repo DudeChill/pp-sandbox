@@ -225,3 +225,19 @@ fast-fails.
 **Fix.** Use `_IONBF`; smoke-tested in CI with the staged DLL/CRT bundle.
 **Lesson.** Windows runtime smoke tests must run the packaged artifact, not
 only the build-tree binary.
+
+## D028 — Scene integrity hash
+**Choice.** Scene format v3 ends with the canonical `state_hash()`; load parses
+into a temporary `World`, compares the recomputed hash, and only then commits
+(so a corrupt payload never mutates the live world). The hash covers warm-start
+impulses, so round-trip and future evolution match.
+**Reason.** Makes the scene self-verifying and catches truncation that still
+parses; the test flips the final byte and expects rejection.
+**Revisit.** Add a per-section checksum if partial recovery is ever needed.
+
+## D029 — Deleted bodies drop their joints
+**Choice.** `World::remove` now retires every joint attached to the body before
+the slot is recycled.
+**Reason.** A stale joint would act on a recycled slot, producing phantom forces.
+The stale-handle test asserts the joint count drops to zero.
+**Revisit.** None; dangling indices are never valid.

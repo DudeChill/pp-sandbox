@@ -500,6 +500,9 @@ TEST_CASE("scene binary round-trip preserves state and future evolution") {
     corrupt[3] ^= 0xFF;
     World bad;
     CHECK(!bad.load_scene(corrupt.data(), corrupt.size()));
+    std::vector<uint8_t> corrupt_hash = blob;
+    corrupt_hash.back() ^= 0xFF;
+    CHECK(!bad.load_scene(corrupt_hash.data(), corrupt_hash.size()));
     CHECK(!bad.load_scene(blob.data(), 8));
 }
 
@@ -782,7 +785,8 @@ TEST_CASE("transfusion and defibrillation reverse hemorrhagic arrest") {
     CHECK(w.vitals(group).arrested);
     CHECK(!w.vitals(group).dead);
 
-    w.apply_iv(r.head(), 1200.0f);
+    w.apply_blood_bag(r.head());
+    w.apply_blood_bag(r.head());
     for (int i = 0; i < 240 * 10; ++i) w.step(in);
     CHECK(w.vitals(group).blood_ml >= 1200.0f);
     w.defibrillate(r.head());

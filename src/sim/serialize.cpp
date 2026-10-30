@@ -8,7 +8,7 @@ namespace sim {
 namespace {
 
 constexpr uint32_t kMagic = 0x43535050u;  // "PPSC"
-constexpr uint32_t kVersion = 2u;
+constexpr uint32_t kVersion = 3u;
 
 struct Writer {
     std::vector<uint8_t>& out;
@@ -19,6 +19,7 @@ struct Writer {
         out.push_back(static_cast<uint8_t>(v >> 16));
         out.push_back(static_cast<uint8_t>(v >> 24));
     }
+    void u64(uint64_t v) { u32(static_cast<uint32_t>(v)); u32(static_cast<uint32_t>(v >> 32)); }
     void f32(float f) {
         uint32_t v = 0;
         std::memcpy(&v, &f, sizeof v);
@@ -53,6 +54,11 @@ struct Reader {
                            (static_cast<uint32_t>(data[offset + 3]) << 24);
         offset += 4;
         return v;
+    }
+    uint64_t u64() {
+        const uint64_t lo = u32();
+        const uint64_t hi = u32();
+        return lo | (hi << 32);
     }
     float f32() {
         const uint32_t v = u32();
@@ -262,6 +268,7 @@ bool World::save_scene(std::vector<uint8_t>& out) const {
         w.u32(p.generation);
         w.flag(p.alive);
     }
+    w.u64(state_hash());
     return true;
 }
 
@@ -421,27 +428,32 @@ bool World::load_scene(const void* data, std::size_t size) {
         }
     }
     if (!r.ok) return false;
+    const uint64_t stored_hash = r.u64();
+    if (!r.ok) return false;
 
-    bodies_ = std::move(bodies);
-    alive_ = std::move(alive);
-    free_ = std::move(free_list);
-    joints_ = std::move(joints);
-    joint_alive_ = std::move(joint_alive);
-    joint_free_ = std::move(joint_free);
-    groups_ = std::move(groups);
-    wires_ = std::move(wires);
-    projectiles_ = std::move(projectiles);
-    projectile_alive_ = std::move(projectile_alive);
-    projectile_free_ = std::move(projectile_free);
-    count_ = count;
-    joint_count_ = joint_count;
-    projectile_count_ = projectile_count;
-    contact_count_ = 0;
-    contacts_.clear();
-    prev_contacts_ = std::move(prev_contacts);
-    wounds_.clear();
-    tick_ = tick;
-    gravity_ = gravity;
+    World tmp;
+    tmp.bodies_ = std::move(bodies);
+    tmp.alive_ = std::move(alive);
+    tmp.free_ = std::move(free_list);
+    tmp.joints_ = std::move(joints);
+    tmp.joint_alive_ = std::move(joint_alive);
+    tmp.joint_free_ = std::move(joint_free);
+    tmp.groups_ = std::move(groups);
+    tmp.wires_ = std::move(wires);
+    tmp.projectiles_ = std::move(projectiles);
+    tmp.projectile_alive_ = std::move(projectile_alive);
+    tmp.projectile_free_ = std::move(projectile_free);
+    tmp.count_ = count;
+    tmp.joint_count_ = joint_count;
+    tmp.projectile_count_ = projectile_count;
+    tmp.prev_contacts_ = std::move(prev_contacts);
+    tmp.tick_ = tick;
+    tmp.gravity_ = gravity;
+    if (tmp.state_hash() != stored_hash) return false;
+
+    const int keep_threads = thread_count_;
+    *this = std::move(tmp);
+    thread_count_ = keep_threads;
     return true;
 }
 
