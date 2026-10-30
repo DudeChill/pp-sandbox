@@ -501,16 +501,16 @@ int main(int, char**) {
         }
 
         {
-            const double bdt = std::min(frame_dt, 0.05);
+            const float bdt = static_cast<float>(std::min(frame_dt, 0.05));
             for (auto& b : blood) {
-                b.vel.y -= 9.81 * bdt;
+                b.vel.y -= 9.81f * bdt;
                 b.pos += b.vel * bdt;
                 if (b.pos.y < 0.01f) {
                     b.pos.y = 0.01f;
                     b.vel = {0.0f, 0.0f};
-                    b.life -= static_cast<float>(bdt) * 0.35f;
+                    b.life -= bdt * 0.35f;
                 } else {
-                    b.life -= static_cast<float>(bdt) * 0.08f;
+                    b.life -= bdt * 0.08f;
                 }
                 if (b.life < 0.0f) b.life = 0.0f;
             }

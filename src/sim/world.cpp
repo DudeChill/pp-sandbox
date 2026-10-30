@@ -932,7 +932,6 @@ bool World::fracture_body(uint32_t index, Vec2 dir, float energy_j) {
 }
 
 void World::explode(Vec2 center, float radius, float energy_j) {
-    constexpr float kPi = 3.14159265358979323846f;
     for (uint32_t i = 0; i < bodies_.size(); ++i) {
         if (!alive_[i]) continue;
         Body& body = bodies_[i];
@@ -970,7 +969,6 @@ void World::explode(Vec2 center, float radius, float energy_j) {
 }
 
 void World::step_projectiles() {
-    constexpr float kPi = 3.14159265358979323846f;
     struct FragmentSpawn {
         Vec2 pos;
         Vec2 vel;
@@ -1045,7 +1043,6 @@ void World::step_projectiles() {
             const Vec2 entry_local = inv_rotate(hit_point - body.pos, -body.angle);
             const Vec2 exit_local =
                 inv_rotate(hit_point + dir * path - body.pos, -body.angle);
-            const Vec2 segment = exit_local - entry_local;
             const float energy_factor = clampf(depth / 0.20f, 0.0f, 1.0f);
 
             const WoundResult wr =
@@ -1510,12 +1507,12 @@ void World::solve_joints() {
             if (j.motor_torque > 0.0f && j.motor_speed != 0.0f) {
                 const float w_rel = b.ang_vel - a.ang_vel;
                 const float target = j.motor_speed;
-                float impulse = (target - w_rel) / k_ang;
+                float motor_impulse = (target - w_rel) / k_ang;
                 const float max_impulse = j.motor_torque * kDt;
-                impulse = clampf(impulse, -max_impulse, max_impulse);
-                j.accumulated_angular += impulse;
-                a.ang_vel -= impulse * ii_a;
-                b.ang_vel += impulse * ii_b;
+                motor_impulse = clampf(motor_impulse, -max_impulse, max_impulse);
+                j.accumulated_angular += motor_impulse;
+                a.ang_vel -= motor_impulse * ii_a;
+                b.ang_vel += motor_impulse * ii_b;
             }
 
         }
