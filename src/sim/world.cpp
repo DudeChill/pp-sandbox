@@ -646,7 +646,8 @@ const Joint& World::joint(JointId id) const {
 }
 
 ProjectileId World::spawn_projectile(Vec2 pos, Vec2 vel, float mass, float radius,
-                                     float drag_k) {
+                                     float drag_k, float fragmentation_speed,
+                                     uint8_t fragments) {
     uint32_t idx = 0;
     if (!projectile_free_.empty()) {
         idx = projectile_free_.back();
@@ -666,6 +667,8 @@ ProjectileId World::spawn_projectile(Vec2 pos, Vec2 vel, float mass, float radiu
     p.mass = mass;
     p.radius = radius;
     p.drag_k = drag_k;
+    p.fragmentation_speed = fragmentation_speed;
+    p.fragments = fragments;
     p.alive = true;
     projectile_alive_[idx] = 1;
     ++projectile_count_;
@@ -770,6 +773,15 @@ bool World::apply_blade(BodyId id, Vec2 world_point, Vec2 dir, float energy_j) {
 
 void World::step_projectiles() {
     constexpr float kPi = 3.14159265358979323846f;
+    struct FragmentSpawn {
+        Vec2 pos;
+        Vec2 vel;
+        float mass;
+        float radius;
+        float drag_k;
+    };
+    FragmentSpawn fragments[64];
+    int fragment_count = 0;
     for (uint32_t i = 0; i < projectiles_.size(); ++i) {
         if (!projectile_alive_[i]) continue;
         Projectile& p = projectiles_[i];
@@ -864,6 +876,23 @@ void World::step_projectiles() {
         if (wounds_.size() >= 256) wounds_.erase(wounds_.begin());
         wounds_.push_back(WoundEvent{hit_point, dir, energy, damage, best_body});
 
+        if (p.fragmentation_speed > 0.0f && impact_speed > p.fragmentation_speed &&
+            p.fragments > 0 && fragment_count + p.fragments < 64) {
+            const float fragment_mass = p.mass / (static_cast<float>(p.fragments) + 1.0f);
+            const float spread[4] = {0.22f, -0.22f, 0.38f, -0.38f};
+            for (uint8_t f = 0; f < p.fragments && f < 4; ++f) {
+                const float angle = spread[f];
+                const Vec2 fdir{dir.x * std::cos(angle) - dir.y * std::sin(angle),
+                                dir.x * std::sin(angle) + dir.y * std::cos(angle)};
+                FragmentSpawn& fs = fragments[fragment_count++];
+                fs.pos = hit_point;
+                fs.vel = fdir * (impact_speed * 0.55f);
+                fs.mass = fragment_mass;
+                fs.radius = p.radius * 0.45f;
+                fs.drag_k = p.drag_k;
+            }
+        }
+
         const float lost = mat.penetration_resistance * area * path;
         const float remaining = std::max(0.0f, energy - lost);
         if (depth > path) {
@@ -883,6 +912,11 @@ void World::step_projectiles() {
             projectile_free_.push_back(i);
             --projectile_count_;
         }
+    }
+
+    for (int f = 0; f < fragment_count; ++f) {
+        const FragmentSpawn& fs = fragments[f];
+        spawn_projectile(fs.pos, fs.vel, fs.mass, fs.radius, fs.drag_k);
     }
 }
 

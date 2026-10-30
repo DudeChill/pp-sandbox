@@ -119,3 +119,13 @@ rates, and severed arteries dominate.
 **Reason.** A testable channel model without a full mesh; keeps the tick
 allocation-free and deterministic.
 **Revisit.** Convex polygons + per-compartment blood supply in M4.
+
+## D016 — Deterministic fragmentation
+**Choice.** Above the class threshold, a projectile spawns up to four
+sub-projectiles at fixed angular offsets (±0.22, ±0.38 rad) with equal mass and
+55% of impact speed. Fragment spawns are queued and appended after the
+projectile loop so iteration stays valid.
+**Reason.** Gives secondary wound channels without an RNG in the tick; spread
+is symmetric and reproducible.
+**Revisit.** Use yaw/orientation-driven fragmentation once projectile
+orientation is simulated.

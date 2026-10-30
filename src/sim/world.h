@@ -35,6 +35,8 @@ struct Projectile {
     float mass = 0.008f;
     float radius = 0.0045f;
     float drag_k = 0.0f;   // 0.5 * rho * Cd * A / m
+    float fragmentation_speed = 0.0f;
+    uint8_t fragments = 0;
     uint32_t generation = 0;
     bool alive = true;
 };
@@ -215,7 +217,8 @@ public:
     void step(const InputFrame& in);
 
     ProjectileId spawn_projectile(Vec2 pos, Vec2 vel, float mass, float radius,
-                                  float drag_k);
+                                  float drag_k, float fragmentation_speed = 0.0f,
+                                  uint8_t fragments = 0);
     void remove_projectile(ProjectileId id);
     [[nodiscard]] bool projectile_alive(ProjectileId id) const;
     [[nodiscard]] Projectile& projectile(ProjectileId id);

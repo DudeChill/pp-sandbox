@@ -87,6 +87,18 @@ strokes damage a 16 cm path at `clamp(E/300, 0, 1)`; structural severance
 requires a bone or muscle compartment above 0.6 and removes the nearest joint
 within 0.45 m.
 
+## Ammunition classes
+
+| Class | m (g) | r (mm) | v0 (m/s) | drag k | fragmentation |
+|---|---|---|---|---|---|
+| 9×19 FMJ | 8.0 | 4.5 | 350 | 0.0015 | none |
+| 5.56 M855 | 4.0 | 2.85 | 940 | 0.0009 | ≥800 m/s, 4 fragments at 0.55 v |
+| 7.62 M80 | 9.5 | 3.9 | 840 | 0.0008 | none |
+| 12 ga slug | 28.0 | 9.0 | 400 | 0.0008 | none |
+| 12 ga 00 | 3.5 | 4.1 | 400 | 0.0018 | none |
+| arrow | 25.0 | 4.0 | 70 | 0.0040 | none |
+| crossbow | 30.0 | 4.5 | 110 | 0.0030 | none |
+
 ## Open items (M4+)
 
 - Material table with density, modulus, strengths, toughness (prompt §13).

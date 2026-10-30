@@ -11,6 +11,7 @@
 #include "render/renderer.h"
 #include "sim/ragdoll.h"
 #include "sim/rope.h"
+#include "sim/ammo.h"
 #include "sim/world.h"
 
 using namespace sim;
@@ -104,6 +105,7 @@ int main(int, char**) {
     Tool tool = Tool::None;
     BodyId weld_first{};
     Vec2 weld_point{};
+    int ammo_index = 0;
     struct Blood {
         Vec2 pos{};
         Vec2 vel{};
@@ -192,10 +194,13 @@ int main(int, char**) {
                     case SDLK_SPACE: paused = !paused; break;
                     case SDLK_b: world.add_box(mouse_world, Vec2{0.4f, 0.4f}); break;
                     case SDLK_h: spawn_ragdoll(world, mouse_world); break;
+                    case SDLK_1: ammo_index = 0; break;
+                    case SDLK_2: ammo_index = 1; break;
+                    case SDLK_3: ammo_index = 2; break;
                     case SDLK_f: {
                         const Vec2 start = mouse_world - Vec2{12.0f, 0.0f};
                         const Vec2 dir = normalize(mouse_world - start);
-                        world.spawn_projectile(start, dir * 350.0f, 0.008f, 0.0045f, 0.0015f);
+                        spawn_ammo(world, ammo_index, start, dir);
                         break;
                     }
                     case SDLK_o: spawn_rope(world, mouse_world, 10, 0.22f, 0.045f, 0.0f); break;

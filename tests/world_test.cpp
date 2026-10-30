@@ -3,6 +3,7 @@
 
 #include "framework.h"
 #include "sim/alloc.h"
+#include "sim/ammo.h"
 #include "sim/ragdoll.h"
 #include "sim/rope.h"
 #include "sim/world.h"
@@ -483,4 +484,27 @@ TEST_CASE("scene binary round-trip preserves state and future evolution") {
     World bad;
     CHECK(!bad.load_scene(corrupt.data(), corrupt.size()));
     CHECK(!bad.load_scene(blob.data(), 8));
+}
+
+TEST_CASE("ammunition classes order by velocity and fragmentation") {
+    CHECK(ammo_count() >= 7);
+    CHECK(ammo_spec(1).muzzle_speed > ammo_spec(2).muzzle_speed);
+    CHECK(ammo_spec(2).muzzle_speed > ammo_spec(0).muzzle_speed);
+    CHECK(ammo_spec(5).muzzle_speed < 100.0f);
+    CHECK(ammo_spec(1).fragments > 0);
+    CHECK(ammo_spec(0).fragments == 0);
+}
+
+TEST_CASE("5.56 fragments inside a thick block, 9 mm does not") {
+    auto wounds_for = [](int ammo) {
+        World w;
+        const BodyId block = w.add_static_box(Vec2{0.0f, 0.0f}, Vec2{0.25f, 0.25f});
+        w.set_material(block, MaterialId::Flesh);
+        spawn_ammo(w, ammo, Vec2{-2.0f, 0.0f}, Vec2{1.0f, 0.0f});
+        InputFrame in;
+        for (int i = 0; i < 30; ++i) w.step(in);
+        return w.wounds().size();
+    };
+    CHECK(wounds_for(0) == 1);
+    CHECK(wounds_for(1) >= 2);
 }

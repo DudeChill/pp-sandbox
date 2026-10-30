@@ -41,6 +41,9 @@ Implemented:
 - Blade strokes with accumulated structural damage and joint severance.
 - Versioned binary scene save/load with warm-start cache; round-trip
   determinism test over 240 further ticks.
+- Seven ammunition classes (`ammo.toml` data in code) with per-class drag and
+  fragmentation thresholds; deterministic fragment sub-projectiles; tests for
+  velocity ordering and 5.56-vs-9 mm fragmentation.
 
 ## Next tasks (M5)
 1. Ballistic coefficient tables (G7), ammunition classes, fragmentation.

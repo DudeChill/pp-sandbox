@@ -212,6 +212,8 @@ bool World::save_scene(std::vector<uint8_t>& out) const {
         w.f32(p.mass);
         w.f32(p.radius);
         w.f32(p.drag_k);
+        w.f32(p.fragmentation_speed);
+        w.u8(p.fragments);
         w.u32(p.generation);
         w.flag(p.alive);
     }
@@ -339,6 +341,8 @@ bool World::load_scene(const void* data, std::size_t size) {
         p.mass = r.f32();
         p.radius = r.f32();
         p.drag_k = r.f32();
+        p.fragmentation_speed = r.f32();
+        p.fragments = r.u8();
         p.generation = r.u32();
         p.alive = r.flag();
         if (!r.ok) return false;

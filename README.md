@@ -23,9 +23,11 @@ construction) are complete:
 
 Scene save/load (`F5`/`F9`) round-trips deterministically.
 
-A first **trauma/ballistics slice** (M2/M3) is in: 9 mm-class projectiles with
+A first **trauma/ballistics slice** (M2/M3) is in: seven ammunition classes
+(9×19, 5.56, 7.62, 12 ga slug/buck, arrow, crossbow) with
 gravity, drag, continuous collision, material-dependent penetration,
-energy-based wound damage, per-body bleeding into a shared blood volume,
+deterministic 5.56-style fragmentation, compartment-based wound damage,
+per-body bleeding into a shared blood volume,
 unconsciousness/death thresholds, a tourniquet treatment, a per-ragdoll blood
 bar, and blood particle feedback. This is a
 lumped model, not yet the per-compartment anatomy of the specification.
@@ -70,7 +72,8 @@ The build deliberately uses `-j2` and `-ffp-contract=off`; do not add
 | `O` | Spawn a hanging rope at the cursor |
 | `G` | Weld tool: click two bodies to weld them |
 | `C` | Cut tool: click near a joint to remove it |
-| `F` | Fire a 9 mm round from the left of the cursor toward it |
+| `1` / `2` / `3` | Select 9×19, 5.56, or 7.62 ammunition |
+| `F` | Fire the selected round from the left of the cursor toward it |
 | `T` | Tourniquet tool: click a limb to stop its bleeding |
 | `V` | Blade tool: slash the body under the cursor (cuts tissue, severs limbs) |
 | `X` | Delete the body under the cursor |
