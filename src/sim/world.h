@@ -93,6 +93,10 @@ struct Body {
     bool signal_in = false;
     float thrust_force = 2500.0f;
 
+    float temperature_c = 20.0f;
+    bool ignited = false;
+    float fuel_s = 0.0f;
+
     static constexpr int kMaxCompartments = 6;
     Compartment compartments[kMaxCompartments]{};
     uint8_t compartment_count = 0;
@@ -181,6 +185,9 @@ public:
     void set_material(BodyId id, MaterialId m);
     void apply_tourniquet(BodyId id);
     void add_compartment(BodyId id, Vec2 local_center, Vec2 local_half, TissueKind kind);
+    void ignite(BodyId id);
+    [[nodiscard]] bool is_burning(BodyId id) const;
+    [[nodiscard]] int burning_count() const;
     void set_component(BodyId id, Component component, float thrust_force = 2500.0f);
     void set_button(BodyId id, bool on);
     void add_wire(BodyId from, BodyId to);
@@ -271,6 +278,7 @@ private:
     JointId add_joint(const Joint& j);
     void broadphase();
     void solve();
+    void update_heat();
     void step_projectiles();
     void update_vitals();
     void solve_joints();

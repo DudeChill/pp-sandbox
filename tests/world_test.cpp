@@ -643,3 +643,33 @@ TEST_CASE("a wired button drives a thruster and unwired thrusters stay idle") {
     CHECK(loaded.state_hash() == w.state_hash());
     CHECK(loaded.wires().size() == 1);
 }
+
+TEST_CASE("fire spreads between wood but not to steel") {
+    World w;
+    const BodyId a = w.add_box(Vec2{0.0f, 1.0f}, Vec2{0.1f, 0.1f});
+    w.set_material(a, MaterialId::Wood);
+    const BodyId b = w.add_box(Vec2{0.25f, 1.0f}, Vec2{0.1f, 0.1f});
+    w.set_material(b, MaterialId::Wood);
+    const BodyId steel = w.add_box(Vec2{-0.25f, 1.0f}, Vec2{0.1f, 0.1f});
+    w.set_material(steel, MaterialId::Steel);
+
+    w.ignite(a);
+    CHECK(w.is_burning(a));
+    InputFrame in;
+    for (int i = 0; i < 240 * 3; ++i) w.step(in);
+    CHECK(w.is_burning(b));
+    CHECK(!w.is_burning(steel));
+}
+
+TEST_CASE("burning damages tissue and eventually kills a vital part") {
+    World w;
+    w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
+    Ragdoll r = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+    const BodyId head = r.head();
+    w.ignite(head);
+    CHECK(w.is_burning(head));
+    InputFrame in;
+    for (int i = 0; i < 240 * 12; ++i) w.step(in);
+    CHECK(w.get(head).health < 0.5f);
+    CHECK(w.vitals(w.get(head).group).dead);
+}

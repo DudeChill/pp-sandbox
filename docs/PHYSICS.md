@@ -125,6 +125,15 @@ Signals are evaluated before the force pass: all wires from powered buttons set
 3 kN) along its local +X axis. Wires are removed when either endpoint is
 deleted; the graph is serialized and hashed.
 
+## Heat and fire
+
+Ignition temperatures: wood 300 C, rubber 350 C, flesh 350 C; metals, glass,
+concrete, and bone are inert. Burning bodies hold 600 C for 12 s, take
+`burn_damage_rate` health per second (wood 0.05, flesh 0.10, rubber 0.15),
+accumulate skin/muscle damage, and add `0.02 x vascularity` ml/s of fluid loss.
+Heat spreads to flammable bodies within 0.35 m at 250 C/s; non-burning bodies
+cool toward 20 C at 0.4/s.
+
 ## Open items (M6)
 
 - Material table with density, modulus, strengths, toughness (prompt §13).

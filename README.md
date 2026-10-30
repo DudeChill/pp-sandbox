@@ -23,7 +23,8 @@ construction) are complete:
 
 Scene save/load (`F5`/`F9`) and input replay (`F6`/`F7`) round-trip
 deterministically; replay reports `OK` or `DIVERGED` from the stored hash.
-Wiring: buttons drive thrusters through explicitly drawn wires; signals are
+Fire ignites flammable bodies (`I`), spreads to neighbours, burns tissue, and
+can kill. Wiring: buttons drive thrusters through explicitly drawn wires; signals are
 evaluated before forces each tick. Glass shatters into four shards above its fracture energy; steel absorbs the
 same round. A 3x5 bitmap HUD
 shows tool, ammunition, body/wound counts, and blood.
@@ -81,6 +82,7 @@ The build deliberately uses `-j2` and `-ffp-contract=off`; do not add
 | `F` | Fire the selected round from the left of the cursor toward it |
 | `E` | Detonate an 8 kJ charge at the cursor |
 | `K` | Spawn a glass pane at the cursor |
+| `I` | Ignite the body under the cursor |
 | `N` | Spawn a button; click it to toggle its signal |
 | `Y` | Spawn a thruster (fires along its +X axis when powered) |
 | `Z` | Wire tool: click an output then an input |

@@ -86,6 +86,9 @@ void write_body(Writer& w, const Body& b) {
     w.flag(b.dynamic);
     w.flag(b.asleep);
     w.f32(b.sleep_timer);
+    w.f32(b.temperature_c);
+    w.flag(b.ignited);
+    w.f32(b.fuel_s);
     w.f32(b.health);
     w.f32(b.bleed_ml_s);
     w.f32(b.vascularity);
@@ -127,6 +130,9 @@ bool read_body(Reader& r, Body& b) {
     b.dynamic = r.flag();
     b.asleep = r.flag();
     b.sleep_timer = r.f32();
+    b.temperature_c = r.f32();
+    b.ignited = r.flag();
+    b.fuel_s = r.f32();
     b.health = r.f32();
     b.bleed_ml_s = r.f32();
     b.vascularity = r.f32();

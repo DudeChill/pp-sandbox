@@ -262,6 +262,11 @@ int main(int, char**) {
                     case SDLK_b: world.add_box(mouse_world, Vec2{0.4f, 0.4f}); break;
                     case SDLK_h: spawn_ragdoll(world, mouse_world); break;
                     case SDLK_e: world.explode(mouse_world, 4.0f, 8000.0f); break;
+                    case SDLK_i: {
+                        const BodyId hit = world.pick(mouse_world);
+                        if (hit.valid()) world.ignite(hit);
+                        break;
+                    }
                     case SDLK_k: {
                         const BodyId pane = world.add_static_box(mouse_world,
                                                                  Vec2{0.5f, 0.5f});
@@ -556,6 +561,20 @@ int main(int, char**) {
                                                         0.20f, 0.95f};
             renderer.box(Vec2{bar_center.x - 0.30f * (1.0f - frac), bar_center.y},
                          Vec2{0.30f * frac, 0.018f}, 0.0f, fill);
+        }
+        {
+            const float t = static_cast<float>(SDL_GetTicks()) * 0.01f;
+            world.for_each([&](BodyId, const Body& b) {
+                if (!b.ignited) return;
+                for (int k = 0; k < 3; ++k) {
+                    const float phase = t + static_cast<float>(k) * 2.1f;
+                    const sim::Vec2 off{std::sin(phase) * 0.05f + (static_cast<float>(k) - 1.0f) * 0.05f,
+                                        b.half.y * 0.6f + std::fabs(std::cos(phase)) * 0.10f};
+                    renderer.circle(b.pos + off, 0.05f + 0.01f * static_cast<float>(k),
+                                    render::Color{1.0f, 0.45f + 0.15f * static_cast<float>(k),
+                                                  0.08f, 0.9f});
+                }
+            });
         }
         for (const Blood& b : blood) {
             renderer.circle(b.pos, b.radius, render::Color{0.62f, 0.05f, 0.08f, b.life});

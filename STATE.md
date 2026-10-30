@@ -46,6 +46,8 @@ Implemented:
   energy threshold; joints on the fractured body are removed first.
 - Input replay recorder (`F6`/`F7`) with scene snapshot + per-tick inputs and
   hash verification; tests prove byte-identical replay over 600 frames.
+- Heat/fire: ignition thresholds, spread, burn tissue damage, fluid loss, and
+  death of vital organs; flame rendering.
 - Wiring: bodies can be buttons or thrusters, wires form a signal graph,
   thrusters apply force along +X when powered; save/load and hash included.
 - Blood budget: `emitted_ml` tracks every millilitre removed, asserted against

@@ -549,6 +549,73 @@ void World::apply_tourniquet(BodyId id) {
     b.bleed_ml_s = 0.0f;
 }
 
+void World::ignite(BodyId id) {
+    if (!alive(id)) return;
+    Body& b = bodies_[id.index];
+    const Material& m = material(b.material);
+    if (m.ignition_celsius <= 0.0f || b.ignited) return;
+    b.ignited = true;
+    b.fuel_s = 12.0f;
+    b.temperature_c = std::max(b.temperature_c, m.ignition_celsius);
+}
+
+bool World::is_burning(BodyId id) const {
+    return alive(id) && bodies_[id.index].ignited;
+}
+
+int World::burning_count() const {
+    int n = 0;
+    for (uint32_t i = 0; i < bodies_.size(); ++i) {
+        if (alive_[i] && bodies_[i].ignited) ++n;
+    }
+    return n;
+}
+
+void World::update_heat() {
+    constexpr float kAmbient = 20.0f;
+    for (uint32_t i = 0; i < bodies_.size(); ++i) {
+        if (!alive_[i]) continue;
+        Body& a = bodies_[i];
+        if (!a.ignited) {
+            a.temperature_c += (kAmbient - a.temperature_c) * 0.4f * kDt;
+            if (a.temperature_c < 21.0f) a.temperature_c = kAmbient;
+            continue;
+        }
+        a.fuel_s -= kDt;
+        a.temperature_c = 600.0f;
+        const Material& m = material(a.material);
+        if (m.burn_damage_rate > 0.0f) {
+            a.health = std::max(0.0f, a.health - m.burn_damage_rate * kDt);
+            for (uint8_t ci = 0; ci < a.compartment_count; ++ci) {
+                Compartment& c = a.compartments[ci];
+                if (c.kind == TissueKind::Skin || c.kind == TissueKind::Muscle) {
+                    c.damage = std::min(1.0f, c.damage + m.burn_damage_rate * kDt);
+                }
+            }
+            if (a.vascularity > 0.0f && !a.tourniquet) {
+                a.bleed_ml_s = std::max(a.bleed_ml_s, a.vascularity * 0.02f);
+            }
+            if (a.group < groups_.size() && a.vital && a.health <= 0.2f) {
+                groups_[a.group].dead = true;
+            }
+        }
+        if (a.fuel_s <= 0.0f) a.ignited = false;
+
+        for (uint32_t j = 0; j < bodies_.size(); ++j) {
+            if (j == i || !alive_[j]) continue;
+            Body& b = bodies_[j];
+            const Material& bm = material(b.material);
+            if (b.ignited || bm.ignition_celsius <= 0.0f) continue;
+            if (length(b.pos - a.pos) > 0.35f) continue;
+            b.temperature_c += 250.0f * kDt;
+            if (b.temperature_c >= bm.ignition_celsius) {
+                b.ignited = true;
+                b.fuel_s = 12.0f;
+            }
+        }
+    }
+}
+
 void World::add_compartment(BodyId id, Vec2 local_center, Vec2 local_half,
                             TissueKind kind) {
     if (!alive(id)) return;
@@ -1169,6 +1236,7 @@ void World::step(const InputFrame& in) {
     position_project();
     project_joints();
     step_projectiles();
+    update_heat();
     if ((tick_ % 4) == 0) update_vitals();
     ++tick_;
 
@@ -1567,6 +1635,9 @@ uint64_t World::state_hash() const {
         h.f32(b.inv_mass);
         h.f32(b.inv_inertia);
         h.f32(b.sleep_timer);
+        h.f32(b.temperature_c);
+        h.boolean(b.ignited);
+        h.f32(b.fuel_s);
         h.u8(static_cast<uint8_t>(b.component));
         h.boolean(b.signal);
         h.boolean(b.signal_in);
