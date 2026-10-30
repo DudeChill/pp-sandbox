@@ -98,7 +98,9 @@ int main(int argc, char** argv) {
         }
     }
     SDL_SetMainReady();
-    std::setvbuf(stdout, nullptr, _IOLBF, 0);
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    std::fprintf(stderr, "pp: after setvbuf\n");
+    std::fflush(stderr);
     if (self_test) {
         std::printf("SELF-TEST starting\n");
         std::fflush(stdout);
