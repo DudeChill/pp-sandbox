@@ -387,15 +387,17 @@ Controls (documented in README):
 
 Headless, deterministic, CI-gated; the suite must contain at least the 37 behaviours below (grouped). Tolerances are part of the contract.
 
-**Core physics (8):** free-fall displacement; circle at rest on a floor; five/six-box stack at a non-zero x (regression for clipping-plane offsets); momentum conservation without damping; determinism across two worlds (3,000 ticks); zero allocations in `step()` after warm-up; stale handles rejected; picking returns the topmost body.
+**Core physics (9):** free-fall displacement; circle at rest on a floor; five-box stack; six-box tower for 30 s at a non-zero x (clipping-plane regression); momentum conservation without damping; determinism across two worlds (3,000 ticks); zero allocations in `step()` after warm-up; stale handles rejected; picking returns the topmost body.
+
+**Performance (1):** 500 bodies sustain the 60 fps step budget.
 
 **Joints and construction (6):** distance joint length; revolute anchor coincidence; weld relative angle; breakable joint fails above rated force; weld plastic hinge — no slip at 0.9× predicted moment, slip at 1.1×; motor reaches 2 rad/s in 1 s.
 
 **Ragdoll and rope (3):** ragdoll collapses and stays assembled (anchor gaps < 5 cm); rope holds a load; rope breaks above rated tension.
 
-**Ballistics (7):** gravity/drag; steel stops vs flesh perforates; penetration depth ±15% (0.6 m passes, 0.7 m stops); headshot kills; thigh wound bleeds without immediate death; 5.56 fragments vs 9 mm does not; ammunition ordering.
+**Ballistics (6):** gravity/drag; steel stops vs flesh perforates; penetration depth ±15% (0.6 m passes, 0.7 m stops); headshot kills and a thigh shot bleeds without immediate death; ammunition ordering; 5.56 fragments vs 9 mm does not.
 
-**Trauma and blood (3):** severed artery bleeds ≥5 ml/s vs muscle-only <2; tourniquet stabilizes blood; `blood + emitted == 5200` within 0.5 ml.
+**Trauma and blood (4):** severed artery bleeds ≥5 ml/s vs muscle-only <2; tourniquet stabilizes blood; repeated blade strokes sever a limb at a joint; `blood + emitted == 5200` within 0.5 ml.
 
 **Materials (1):** glass yields exactly 4 shards (body count +3), steel unchanged.
 
@@ -405,9 +407,11 @@ Headless, deterministic, CI-gated; the suite must contain at least the 37 behavi
 
 **Wiring (1):** unwired thruster idle, wired button accelerates it, stop removes acceleration, scene round-trip preserves the wire and hash.
 
-**Persistence and replay (2):** scene round-trip deterministic over 240 ticks; 600-frame replay bit-identical.
+**Persistence and replay (2):** scene round-trip deterministic over 240 ticks (corrupt/truncated blobs rejected); 600-frame replay bit-identical.
 
-**Robustness (2):** corrupt scene/replay rejected; a 900 m/s projectile still registers a hit on a 1 mm plate (no tunneling); no NaN/inf after any test.
+**Robustness (1):** a 900 m/s projectile still registers a hit on a 1 mm plate (no tunneling); no NaN/inf after any test.
+
+The reference suite contains exactly 37 cases.
 
 Commands:
 
