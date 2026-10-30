@@ -22,7 +22,7 @@
 ## Implemented
 M0 core: fixed-step solver, contacts, projection, sleeping, renderer, harness.
 M1 construction: distance/revolute/weld joints, limits, motors, plastic hinges,
-14-part ragdoll, rope, materials, weld/cut.
+13-part ragdoll, rope, materials, weld/cut.
 M2 trauma: tissue compartments, wound channels, hemorrhage, blood budget,
 shock, death, tourniquet, HUD bar, blood particles.
 M3 ballistics: projectiles, seven ammo classes, drag, CCD, penetration,
