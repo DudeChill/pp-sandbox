@@ -222,7 +222,7 @@ void Renderer::line(sim::Vec2 a, sim::Vec2 b, float thickness, Color color) {
         std::atan2(d.y, d.x), color);
 }
 
-void Renderer::text(sim::Vec2 top_left, float pixel, Color color, const std::string& str) {
+void Renderer::text(sim::Vec2 top_left, float pixel, Color color, std::string_view str) {
     uint8_t rows[5];
     sim::Vec2 cursor = top_left;
     for (const char c : str) {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string>
+#include <string_view>
 #include <vector>
 
 #include "sim/math.h"
@@ -23,7 +23,7 @@ public:
     void box(sim::Vec2 center, sim::Vec2 half, float angle, Color color);
     void circle(sim::Vec2 center, float radius, Color color);
     void line(sim::Vec2 a, sim::Vec2 b, float thickness, Color color);
-    void text(sim::Vec2 top_left, float pixel, Color color, const std::string& s);
+    void text(sim::Vec2 top_left, float pixel, Color color, std::string_view s);
     void end();
 
 private:
