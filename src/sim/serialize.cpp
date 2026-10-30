@@ -92,6 +92,10 @@ void write_body(Writer& w, const Body& b) {
     w.u32(b.group);
     w.flag(b.vital);
     w.flag(b.tourniquet);
+    w.u8(static_cast<uint8_t>(b.component));
+    w.flag(b.signal);
+    w.flag(b.signal_in);
+    w.f32(b.thrust_force);
     w.u8(b.compartment_count);
     for (uint8_t i = 0; i < b.compartment_count; ++i) {
         const Compartment& c = b.compartments[i];
@@ -129,6 +133,10 @@ bool read_body(Reader& r, Body& b) {
     b.group = r.u32();
     b.vital = r.flag();
     b.tourniquet = r.flag();
+    b.component = static_cast<Component>(r.u8());
+    b.signal = r.flag();
+    b.signal_in = r.flag();
+    b.thrust_force = r.f32();
     b.compartment_count = r.u8();
     if (b.compartment_count > Body::kMaxCompartments) return false;
     for (uint8_t i = 0; i < b.compartment_count; ++i) {
@@ -180,6 +188,12 @@ bool World::save_scene(std::vector<uint8_t>& out) const {
         w.f32(j.force_ema);
         w.f32(j.torque_ema);
         w.u32(j.generation);
+    }
+
+    w.u32(static_cast<uint32_t>(wires_.size()));
+    for (const Wire& wire : wires_) {
+        w.u32(wire.from);
+        w.u32(wire.to);
     }
 
     w.u32(static_cast<uint32_t>(groups_.size()));
@@ -295,6 +309,18 @@ bool World::load_scene(const void* data, std::size_t size) {
         }
     }
 
+    const uint32_t wire_count = r.u32();
+    if (wire_count > (1u << 16)) return false;
+    std::vector<Wire> wires;
+    wires.reserve(wire_count);
+    for (uint32_t i = 0; i < wire_count; ++i) {
+        Wire wire;
+        wire.from = r.u32();
+        wire.to = r.u32();
+        if (!r.ok || wire.from >= bodies.size() || wire.to >= bodies.size()) return false;
+        wires.push_back(wire);
+    }
+
     const uint32_t group_count = r.u32();
     if (group_count > (1u << 16)) return false;
     std::vector<Vitals> groups;
@@ -369,6 +395,7 @@ bool World::load_scene(const void* data, std::size_t size) {
     joint_alive_ = std::move(joint_alive);
     joint_free_ = std::move(joint_free);
     groups_ = std::move(groups);
+    wires_ = std::move(wires);
     projectiles_ = std::move(projectiles);
     projectile_alive_ = std::move(projectile_alive);
     projectile_free_ = std::move(projectile_free);

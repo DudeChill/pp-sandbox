@@ -47,6 +47,7 @@ public:
         }
     }
 
+    void u8(uint8_t v) { write(&v, sizeof v); }
     void u32(uint32_t v) { write(&v, sizeof v); }
     void u64(uint64_t v) { write(&v, sizeof v); }
     void f32(float f) {

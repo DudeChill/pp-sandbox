@@ -613,3 +613,33 @@ TEST_CASE("glass shatters into shards while steel absorbs the same round") {
 
     std::printf("  glass bodies %u -> %u\n", glass.first, glass.second);
 }
+
+TEST_CASE("a wired button drives a thruster and unwired thrusters stay idle") {
+    World w;
+    w.set_gravity(Vec2{0.0f, 0.0f});
+    const BodyId button = w.add_static_box(Vec2{0.0f, 0.0f}, Vec2{0.1f, 0.1f});
+    w.set_component(button, Component::Button);
+    const BodyId thruster = w.add_box(Vec2{0.0f, 0.0f}, Vec2{0.2f, 0.1f});
+    w.set_component(thruster, Component::Thruster, 3000.0f);
+
+    InputFrame in;
+    for (int i = 0; i < 30; ++i) w.step(in);
+    CHECK(length(w.get(thruster).vel) < 0.01f);
+
+    w.add_wire(button, thruster);
+    w.set_button(button, true);
+    for (int i = 0; i < 60; ++i) w.step(in);
+    CHECK(w.get(thruster).vel.x > 1.0f);
+
+    w.set_button(button, false);
+    const float vx = w.get(thruster).vel.x;
+    for (int i = 0; i < 30; ++i) w.step(in);
+    CHECK_NEAR(w.get(thruster).vel.x, vx, 0.01f);
+
+    std::vector<uint8_t> blob;
+    CHECK(w.save_scene(blob));
+    World loaded;
+    CHECK(loaded.load_scene(blob.data(), blob.size()));
+    CHECK(loaded.state_hash() == w.state_hash());
+    CHECK(loaded.wires().size() == 1);
+}

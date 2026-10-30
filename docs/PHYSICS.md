@@ -118,6 +118,13 @@ no fragments, no overpressure wave.
 Fracture removes the body's joints before splitting, and shard velocities are
 `v + radial(±1.4) + dir(1.2)` with inherited spin.
 
+## Signals and thrusters
+
+Signals are evaluated before the force pass: all wires from powered buttons set
+`signal_in` on their targets. A powered thruster adds `thrust_force` (default
+3 kN) along its local +X axis. Wires are removed when either endpoint is
+deleted; the graph is serialized and hashed.
+
 ## Open items (M6)
 
 - Material table with density, modulus, strengths, toughness (prompt §13).

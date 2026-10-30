@@ -376,6 +376,7 @@ World::World() {
     projectile_alive_.reserve(1024);
     projectile_free_.reserve(256);
     wounds_.reserve(256);
+    wires_.reserve(4096);
 }
 
 BodyId World::create_body() {
@@ -458,6 +459,13 @@ void World::remove(BodyId id) {
     ++b.generation;
     free_.push_back(id.index);
     --count_;
+
+    size_t write = 0;
+    for (size_t read = 0; read < wires_.size(); ++read) {
+        if (wires_[read].from == id.index || wires_[read].to == id.index) continue;
+        wires_[write++] = wires_[read];
+    }
+    wires_.resize(write);
 }
 
 void World::clear() {
@@ -474,6 +482,7 @@ void World::clear() {
     projectile_free_.clear();
     groups_.clear();
     wounds_.clear();
+    wires_.clear();
     count_ = 0;
     contact_count_ = 0;
     joint_count_ = 0;
@@ -552,6 +561,33 @@ void World::add_compartment(BodyId id, Vec2 local_center, Vec2 local_half,
     c.damage = 0.0f;
     c.severed = false;
 }
+
+void World::set_component(BodyId id, Component component, float thrust_force) {
+    if (!alive(id)) return;
+    Body& b = bodies_[id.index];
+    b.component = component;
+    b.thrust_force = thrust_force;
+    b.signal = false;
+    b.signal_in = false;
+}
+
+void World::set_button(BodyId id, bool on) {
+    if (!alive(id)) return;
+    Body& b = bodies_[id.index];
+    if (b.component != Component::Button) return;
+    b.signal = on;
+}
+
+void World::add_wire(BodyId from, BodyId to) {
+    if (!alive(from) || !alive(to)) return;
+    if (wires_.size() >= 4096) return;
+    for (const Wire& w : wires_) {
+        if (w.from == from.index && w.to == to.index) return;
+    }
+    wires_.push_back(Wire{from.index, to.index});
+}
+
+const std::vector<Wire>& World::wires() const { return wires_; }
 
 void World::set_material(BodyId id, MaterialId m) {
     if (!alive(id)) return;
@@ -1052,6 +1088,26 @@ void World::update_vitals() {
 
 
 void World::step(const InputFrame& in) {
+    for (uint32_t i = 0; i < bodies_.size(); ++i) {
+        if (alive_[i]) bodies_[i].signal_in = false;
+    }
+    for (const Wire& wire : wires_) {
+        if (wire.from >= bodies_.size() || wire.to >= bodies_.size()) continue;
+        if (alive_[wire.from] && alive_[wire.to] && bodies_[wire.from].signal) {
+            bodies_[wire.to].signal_in = true;
+        }
+    }
+    for (uint32_t i = 0; i < bodies_.size(); ++i) {
+        if (!alive_[i]) continue;
+        Body& b = bodies_[i];
+        if (b.component == Component::Thruster && b.signal_in && b.dynamic) {
+            b.force += rotate(Vec2{b.thrust_force, 0.0f}, b.angle);
+            b.asleep = false;
+            b.sleep_timer = 0.0f;
+        }
+    }
+
+
     // 1-2. Input and force accumulation.
     for (uint32_t i = 0; i < bodies_.size(); ++i) {
         if (!alive_[i]) continue;
@@ -1511,12 +1567,20 @@ uint64_t World::state_hash() const {
         h.f32(b.inv_mass);
         h.f32(b.inv_inertia);
         h.f32(b.sleep_timer);
+        h.u8(static_cast<uint8_t>(b.component));
+        h.boolean(b.signal);
+        h.boolean(b.signal_in);
         h.u32(b.compartment_count);
         for (uint8_t c = 0; c < b.compartment_count; ++c) {
             const Compartment& comp = b.compartments[c];
             h.f32(comp.damage);
             h.boolean(comp.severed);
         }
+    }
+    h.u32(static_cast<uint32_t>(wires_.size()));
+    for (const Wire& w : wires_) {
+        h.u32(w.from);
+        h.u32(w.to);
     }
     h.u32(projectile_count_);
     for (uint32_t i = 0; i < projectiles_.size(); ++i) {

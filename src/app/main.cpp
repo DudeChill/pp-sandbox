@@ -102,7 +102,7 @@ int main(int, char**) {
     bool paused = false;
     BodyId grab{};
     Vec2 mouse_world{};
-    enum class Tool { None, Weld, Cut, Tourniquet, Blade, Motor };
+    enum class Tool { None, Weld, Cut, Tourniquet, Blade, Motor, Wire };
     Tool tool = Tool::None;
     BodyId weld_first{};
     Vec2 weld_point{};
@@ -193,6 +193,15 @@ int main(int, char**) {
                                 weld_first = BodyId{};
                             }
                         }
+                    } else if (tool == Tool::Wire) {
+                        if (hit.valid()) {
+                            if (!weld_first.valid()) {
+                                weld_first = hit;
+                            } else if (hit != weld_first) {
+                                world.add_wire(weld_first, hit);
+                                weld_first = BodyId{};
+                            }
+                        }
                     } else if (tool == Tool::Motor) {
                         if (hit.valid()) {
                             if (!weld_first.valid()) {
@@ -228,7 +237,12 @@ int main(int, char**) {
                         });
                         if (best.valid()) world.remove_joint(best);
                     } else {
-                        grab = world.pick(p);
+                        if (hit.valid() &&
+                            world.get(hit).component == Component::Button) {
+                            world.set_button(hit, !world.get(hit).signal);
+                        } else {
+                            grab = world.pick(p);
+                        }
                     }
                 } else if (e.button.button == SDL_BUTTON_RIGHT) {
                     world.add_circle(p, 0.25f);
@@ -271,6 +285,20 @@ int main(int, char**) {
                                  break;
                     case SDLK_v: tool = tool == Tool::Blade ? Tool::None : Tool::Blade; break;
                     case SDLK_m: tool = tool == Tool::Motor ? Tool::None : Tool::Motor;
+                                 weld_first = BodyId{}; break;
+                    case SDLK_n: {
+                        const BodyId button = world.add_static_box(mouse_world,
+                                                                   Vec2{0.12f, 0.08f});
+                        world.set_component(button, Component::Button);
+                        break;
+                    }
+                    case SDLK_y: {
+                        const BodyId thruster = world.add_box(mouse_world,
+                                                              Vec2{0.20f, 0.08f});
+                        world.set_component(thruster, Component::Thruster, 3000.0f);
+                        break;
+                    }
+                    case SDLK_z: tool = tool == Tool::Wire ? Tool::None : Tool::Wire;
                                  weld_first = BodyId{}; break;
                     case SDLK_x: {
                         const BodyId hit = world.pick(mouse_world);
@@ -488,7 +516,13 @@ int main(int, char**) {
         renderer.begin(width, height, cam.center, cam.view_height);
         world.for_each([&](BodyId id, const Body& b) {
             render::Color color;
-            if (!b.dynamic) {
+            if (b.component == Component::Button) {
+                color = b.signal ? render::Color{0.95f, 0.80f, 0.25f, 1.0f}
+                                 : render::Color{0.55f, 0.45f, 0.25f, 1.0f};
+            } else if (b.component == Component::Thruster) {
+                color = b.signal_in ? render::Color{0.30f, 0.95f, 0.95f, 1.0f}
+                                    : render::Color{0.22f, 0.50f, 0.55f, 1.0f};
+            } else if (!b.dynamic) {
                 color = {0.22f, 0.24f, 0.29f, 1.0f};
             } else if (id == grab) {
                 color = {0.30f, 0.85f, 0.52f, 1.0f};
@@ -525,6 +559,15 @@ int main(int, char**) {
         }
         for (const Blood& b : blood) {
             renderer.circle(b.pos, b.radius, render::Color{0.62f, 0.05f, 0.08f, b.life});
+        }
+        for (const Wire& wire : world.wires()) {
+            const BodyId a = world.id_at(wire.from);
+            const BodyId b = world.id_at(wire.to);
+            if (!a.valid() || !b.valid()) continue;
+            const bool live = world.get(a).signal;
+            renderer.line(world.get(a).pos, world.get(b).pos, 0.015f,
+                          live ? render::Color{0.95f, 0.85f, 0.30f, 1.0f}
+                               : render::Color{0.45f, 0.42f, 0.35f, 1.0f});
         }
         world.for_each_projectile([&](ProjectileId, const Projectile& p) {
             renderer.circle(p.pos, 0.02f, render::Color{1.0f, 0.92f, 0.45f, 1.0f});

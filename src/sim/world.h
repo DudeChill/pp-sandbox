@@ -11,6 +11,7 @@
 namespace sim {
 
 enum class Shape : uint8_t { Circle = 0, Box = 1 };
+enum class Component : uint8_t { None = 0, Button, Thruster };
 
 enum class TissueKind : uint8_t {
     Skin = 0, Fat, Muscle, Bone, Artery, Vein, Nerve,
@@ -87,6 +88,10 @@ struct Body {
     uint32_t group = UINT32_MAX;
     bool vital = false;
     bool tourniquet = false;
+    Component component = Component::None;
+    bool signal = false;
+    bool signal_in = false;
+    float thrust_force = 2500.0f;
 
     static constexpr int kMaxCompartments = 6;
     Compartment compartments[kMaxCompartments]{};
@@ -120,6 +125,11 @@ struct Joint {
     float torque_ema = 0.0f;
     uint32_t generation = 0;
     bool alive = true;
+};
+
+struct Wire {
+    uint32_t from = 0;
+    uint32_t to = 0;
 };
 
 struct InputFrame {
@@ -171,6 +181,10 @@ public:
     void set_material(BodyId id, MaterialId m);
     void apply_tourniquet(BodyId id);
     void add_compartment(BodyId id, Vec2 local_center, Vec2 local_half, TissueKind kind);
+    void set_component(BodyId id, Component component, float thrust_force = 2500.0f);
+    void set_button(BodyId id, bool on);
+    void add_wire(BodyId from, BodyId to);
+    [[nodiscard]] const std::vector<struct Wire>& wires() const;
     // Applies a blade stroke; returns true if it severed a joint (dismemberment).
     bool apply_blade(BodyId id, Vec2 world_point, Vec2 dir, float energy_j);
     void explode(Vec2 center, float radius, float energy_j);
@@ -282,6 +296,7 @@ private:
     std::vector<uint32_t> projectile_free_;
     std::vector<Vitals> groups_;
     std::vector<WoundEvent> wounds_;
+    std::vector<Wire> wires_;
     uint32_t projectile_count_ = 0;
     uint64_t tick_ = 0;
     uint32_t count_ = 0;

@@ -28,6 +28,9 @@ target_compile_options(pp_tests PRIVATE ${PP_WARNINGS} ${PP_FP_FLAGS})
 target_link_libraries(pp_tests PRIVATE pp_sim)
 add_test(NAME core COMMAND pp_tests)
 
+add_executable(pp_make_wiring tools/make_wiring.cpp)
+target_link_libraries(pp_make_wiring PRIVATE pp_sim)
+
 option(PP_BUILD_APP "Build the SDL2 application" ON)
 set(PP_SDL2_ROOT "$ENV{PP_SDL2_ROOT}" CACHE PATH "Extracted SDL2 dev package root")
 set(PP_SDL2_LIBRARY "/usr/lib/x86_64-linux-gnu/libSDL2-2.0.so.0" CACHE FILEPATH "SDL2 shared library")
