@@ -83,6 +83,8 @@ void build_scene(World& w) {
 } // namespace
 
 int main(int argc, char** argv) {
+    std::fprintf(stderr, "pp: main entered (argc=%d)\n", argc);
+    std::fflush(stderr);
     int bench_frames = 0;
     int startup_threads = 1;
     bool self_test = false;
@@ -100,6 +102,8 @@ int main(int argc, char** argv) {
     if (self_test) {
         std::printf("SELF-TEST starting\n");
         std::fflush(stdout);
+        std::fprintf(stderr, "pp: self-test block\n");
+        std::fflush(stderr);
         if (SDL_Init(SDL_INIT_TIMER) != 0) {
             std::fprintf(stderr, "self-test: SDL init failed: %s\n", SDL_GetError());
             return 2;
@@ -107,8 +111,12 @@ int main(int argc, char** argv) {
         World w;
         build_scene(w);
         w.set_thread_count(1);
+        std::fprintf(stderr, "pp: self-test world ready\n");
+        std::fflush(stderr);
         InputFrame in;
         for (int i = 0; i < 240; ++i) w.step(in);
+        std::fprintf(stderr, "pp: self-test steps done\n");
+        std::fflush(stderr);
         bool finite = true;
         w.for_each([&](BodyId, const Body& b) {
             finite = finite && std::isfinite(b.pos.x) && std::isfinite(b.pos.y) &&
@@ -364,6 +372,8 @@ int main(int argc, char** argv) {
     blood.reserve(4096);
     std::size_t wounds_seen = 0;
     uint32_t blood_rng = 0x9E3779B9u;
+    double last_emitted_ml = -1.0;
+    float blood_debt_ml = 0.0f;
 
     double last = static_cast<double>(SDL_GetPerformanceCounter()) /
                   static_cast<double>(SDL_GetPerformanceFrequency());
@@ -605,7 +615,13 @@ int main(int argc, char** argv) {
                         if (hit == grab) grab = BodyId{};
                         break;
                     }
-                    case SDLK_r: build_scene(world); blood.clear(); wounds_seen = 0; break;
+                    case SDLK_r:
+                        build_scene(world);
+                        blood.clear();
+                        wounds_seen = 0;
+                        last_emitted_ml = -1.0;
+                        blood_debt_ml = 0.0f;
+                        break;
                     case SDLK_F5: {
                         std::vector<uint8_t> blob;
                         world.save_scene(blob);
@@ -695,6 +711,8 @@ int main(int argc, char** argv) {
                             playing = true;
                             blood.clear();
                             wounds_seen = 0;
+                            last_emitted_ml = -1.0;
+                            blood_debt_ml = 0.0f;
                             std::printf("replay started (%zu frames)\n", play_frames.size());
                         }
                         break;
@@ -708,6 +726,8 @@ int main(int argc, char** argv) {
                         } else if (world.load_scene(blob.data(), blob.size())) {
                             blood.clear();
                             wounds_seen = 0;
+                            last_emitted_ml = -1.0;
+                            blood_debt_ml = 0.0f;
                             std::printf("loaded scene.ppb\n");
                         } else {
                             std::printf("scene.ppb rejected\n");
@@ -782,18 +802,35 @@ int main(int argc, char** argv) {
                     if (wb.valid()) {
                         audio.impact(world.get(wb).material, we.energy);
                     }
-                    if (!wb.valid() || world.get(wb).vascularity <= 0.0f) continue;
-                    const int n = 6 + static_cast<int>(we.damage * 14.0f);
-                    for (int k = 0; k < n; ++k) {
-                        if (blood.size() >= 4096) break;
+                }
+                wounds_seen = ws.size();
+
+                // Presentation consumes the authoritative blood budget: one
+                // droplet per 4 ml actually emitted, never more.
+                double emitted = 0.0;
+                for (uint32_t g = 0; g < world.group_count(); ++g) {
+                    emitted += world.vitals(g).emitted_ml;
+                }
+                if (last_emitted_ml < 0.0) last_emitted_ml = emitted;
+                const float delta_ml = static_cast<float>(emitted - last_emitted_ml);
+                last_emitted_ml = emitted;
+                if (delta_ml > 0.0f) {
+                    blood_debt_ml = std::min(80.0f, blood_debt_ml + delta_ml);
+                }
+                if (!ws.empty()) {
+                    const WoundEvent& src = ws.back();
+                    int spawn_budget = 8;
+                    while (blood_debt_ml >= 4.0f && spawn_budget-- > 0 &&
+                           blood.size() < 4096) {
+                        blood_debt_ml -= 4.0f;
                         const float spread = (next_rand() - 0.5f) * 2.4f;
-                        Vec2 v = we.dir * (1.0f + next_rand() * 2.5f) +
+                        Vec2 v = src.dir * (1.0f + next_rand() * 2.5f) +
                                  Vec2{spread, next_rand() * 1.5f};
-                        blood.push_back(Blood{we.pos, v * (1.0f + next_rand() * 2.0f),
+                        blood.push_back(Blood{src.pos,
+                                              v * (1.0f + next_rand() * 2.0f),
                                               1.0f, 0.03f + next_rand() * 0.05f});
                     }
                 }
-                wounds_seen = ws.size();
                 accumulator -= static_cast<double>(World::kDt);
                 ++steps;
             }
