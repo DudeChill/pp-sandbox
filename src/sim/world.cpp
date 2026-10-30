@@ -12,10 +12,14 @@ namespace {
 
 constexpr float kSlop = 0.005f;
 constexpr int kVelIters = 10;
-constexpr float kGravity = -9.81f;
+
 constexpr float kSleepLin = 0.03f;
 constexpr float kSleepAng = 0.15f;
 constexpr float kSleepTime = 0.5f;
+constexpr float kJointBeta = 0.2f;
+constexpr float kJointMaxBias = 2.0f;
+constexpr float kJointSlop = 0.002f;
+constexpr float kJointCorrection = 0.8f;
 constexpr float kLinDamp = 0.0f;
 constexpr float kAngDamp = 0.0f;
 constexpr float kGrabK = 400.0f;
@@ -233,6 +237,9 @@ World::World() {
     aabbs_.reserve(8192);
     contacts_.reserve(1u << 16);
     prev_contacts_.reserve(1u << 16);
+    joints_.reserve(4096);
+    joint_alive_.reserve(4096);
+    joint_free_.reserve(1024);
 }
 
 BodyId World::create_body() {
@@ -323,8 +330,12 @@ void World::clear() {
     free_.clear();
     contacts_.clear();
     prev_contacts_.clear();
+    joints_.clear();
+    joint_alive_.clear();
+    joint_free_.clear();
     count_ = 0;
     contact_count_ = 0;
+    joint_count_ = 0;
 }
 
 BodyId World::pick(Vec2 point) const {
@@ -344,14 +355,144 @@ BodyId World::pick(Vec2 point) const {
     return best;
 }
 
+JointId World::add_distance_joint(BodyId a_id, BodyId b_id, Vec2 anchor_a, Vec2 anchor_b,
+                                  float rest_length, float break_force) {
+    assert(alive(a_id) && alive(b_id) && "invalid joint bodies");
+    const Body& a = bodies_[a_id.index];
+    const Body& b = bodies_[b_id.index];
+    Joint j;
+    j.type = JointType::Distance;
+    j.a = a_id.index;
+    j.b = b_id.index;
+    j.local_a = inv_rotate(anchor_a - a.pos, -a.angle);
+    j.local_b = inv_rotate(anchor_b - b.pos, -b.angle);
+    j.rest_length = rest_length;
+    j.break_force = break_force;
+    return add_joint(j);
+}
+
+JointId World::add_revolute_joint(BodyId a_id, BodyId b_id, Vec2 world_anchor,
+                                  bool has_limit, float limit_min, float limit_max) {
+    assert(alive(a_id) && alive(b_id) && "invalid joint bodies");
+    const Body& a = bodies_[a_id.index];
+    const Body& b = bodies_[b_id.index];
+    Joint j;
+    j.type = JointType::Revolute;
+    j.a = a_id.index;
+    j.b = b_id.index;
+    j.local_a = inv_rotate(world_anchor - a.pos, -a.angle);
+    j.local_b = inv_rotate(world_anchor - b.pos, -b.angle);
+    j.rest_length = 0.0f;
+    j.ref_angle = b.angle - a.angle;
+    j.has_limit = has_limit;
+    j.limit_min = limit_min;
+    j.limit_max = limit_max;
+    return add_joint(j);
+}
+
+void World::set_material(BodyId id, MaterialId m) {
+    if (!alive(id)) return;
+    Body& b = bodies_[id.index];
+    b.material = m;
+    const Material& mat = material(m);
+    b.friction = mat.friction;
+    b.restitution = mat.restitution;
+    if (b.dynamic) {
+        const float area = b.shape == Shape::Circle
+                               ? 3.14159265358979323846f * b.radius * b.radius
+                               : 4.0f * b.half.x * b.half.y;
+        b.mass = mat.density * area;
+        b.inv_mass = 1.0f / b.mass;
+        const float inertia = b.shape == Shape::Circle
+                                  ? 0.5f * b.mass * b.radius * b.radius
+                                  : b.mass * (b.half.x * b.half.x + b.half.y * b.half.y) / 3.0f;
+        b.inv_inertia = 1.0f / inertia;
+    }
+}
+
+JointId World::add_weld_joint(BodyId a_id, BodyId b_id, Vec2 world_anchor,
+                              float break_force, float break_torque) {
+    assert(alive(a_id) && alive(b_id) && "invalid joint bodies");
+    const Body& a = bodies_[a_id.index];
+    const Body& b = bodies_[b_id.index];
+    Joint j;
+    j.type = JointType::Weld;
+    j.a = a_id.index;
+    j.b = b_id.index;
+    j.local_a = inv_rotate(world_anchor - a.pos, -a.angle);
+    j.local_b = inv_rotate(world_anchor - b.pos, -b.angle);
+    j.rest_length = 0.0f;
+    j.ref_angle = b.angle - a.angle;
+    j.break_force = break_force;
+    j.break_torque = break_torque;
+
+    const Material& ma = material(a.material);
+    const Material& mb = material(b.material);
+    const float sy = std::min(ma.yield_stress, mb.yield_stress);
+    const float su = std::min(ma.ultimate_stress, mb.ultimate_stress);
+    const float interface_h = std::min(2.0f * a.half.y, 2.0f * b.half.y);
+    constexpr float kDepth2D = 0.05f;
+    const float section = kDepth2D * interface_h * interface_h / 6.0f;
+    j.yield_torque = sy * section;
+    if (j.break_torque <= 0.0f) j.break_torque = su * section;
+    return add_joint(j);
+}
+
+JointId World::add_joint(const Joint& j) {
+    uint32_t idx = 0;
+    if (!joint_free_.empty()) {
+        idx = joint_free_.back();
+        joint_free_.pop_back();
+    } else {
+        idx = static_cast<uint32_t>(joints_.size());
+        joints_.emplace_back();
+        joint_alive_.push_back(0);
+    }
+    Joint& s = joints_[idx];
+    const uint32_t gen = s.generation;
+    s = j;
+    s.generation = gen;
+    joint_alive_[idx] = 1;
+    ++joint_count_;
+    return JointId{idx, gen};
+}
+
+void World::remove_joint(JointId id) {
+    if (!joint_alive(id)) return;
+    Joint& j = joints_[id.index];
+    joint_alive_[id.index] = 0;
+    j.alive = false;
+    ++j.generation;
+    joint_free_.push_back(id.index);
+    --joint_count_;
+}
+
+bool World::joint_alive(JointId id) const {
+    return id.index < joints_.size() && joint_alive_[id.index] != 0 &&
+           joints_[id.index].generation == id.generation;
+}
+
+Joint& World::joint(JointId id) {
+    assert(joint_alive(id) && "invalid joint handle");
+    return joints_[id.index];
+}
+
+const Joint& World::joint(JointId id) const {
+    assert(joint_alive(id) && "invalid joint handle");
+    return joints_[id.index];
+}
+
 void World::step(const InputFrame& in) {
     // 1-2. Input and force accumulation.
     for (uint32_t i = 0; i < bodies_.size(); ++i) {
         if (!alive_[i]) continue;
         Body& b = bodies_[i];
-        b.force = {};
-        b.torque = 0.0f;
         if (!b.dynamic) continue;
+
+        if (b.asleep && (b.force.x != 0.0f || b.force.y != 0.0f || b.torque != 0.0f)) {
+            b.asleep = false;
+            b.sleep_timer = 0.0f;
+        }
 
         if (in.grab_active && in.grab == BodyId{i, b.generation}) {
             b.asleep = false;
@@ -363,14 +504,45 @@ void World::step(const InputFrame& in) {
         }
 
         if (b.asleep) continue;
-        b.vel += (b.force * b.inv_mass + Vec2{0.0f, kGravity}) * kDt;
+        b.vel += (b.force * b.inv_mass + gravity_) * kDt;
         b.ang_vel += b.torque * b.inv_inertia * kDt;
+    }
+
+    for (Joint& j : joints_) {
+        if (!j.alive) continue;
+        j.accumulated = 0.0f;
+        j.accumulated_angular = 0.0f;
+    }
+
+    // Wake propagation through joints: an awake body drags its connected
+    // island awake, otherwise half-asleep islands produce wrong constraint
+    // forces when an external load is applied.
+    for (int pass = 0; pass < 4; ++pass) {
+        bool changed = false;
+        for (uint32_t i = 0; i < joints_.size(); ++i) {
+            if (!joint_alive_[i]) continue;
+            Joint& j = joints_[i];
+            Body& a = bodies_[j.a];
+            Body& b = bodies_[j.b];
+            if (a.dynamic && !a.asleep && b.dynamic && b.asleep) {
+                b.asleep = false;
+                b.sleep_timer = 0.0f;
+                changed = true;
+            }
+            if (b.dynamic && !b.asleep && a.dynamic && a.asleep) {
+                a.asleep = false;
+                a.sleep_timer = 0.0f;
+                changed = true;
+            }
+        }
+        if (!changed) break;
     }
 
     broadphase();
     solve();
     integrate();
     position_project();
+    project_joints();
 
     contact_count_ = static_cast<uint32_t>(contacts_.size());
     prev_contacts_ = contacts_;
@@ -487,6 +659,8 @@ void World::solve() {
     }
 
     for (int iteration = 0; iteration < kVelIters; ++iteration) {
+        solve_joints();
+        solve_joints();
         for (Contact& c : contacts_) {
             Body& a = bodies_[c.a];
             Body& b = bodies_[c.b];
@@ -541,6 +715,133 @@ void World::solve() {
             }
         }
     }
+
+    constexpr float kEma = 0.1f;
+    for (uint32_t i = 0; i < joints_.size(); ++i) {
+        if (!joint_alive_[i]) continue;
+        Joint& j = joints_[i];
+        const float inst_force = std::fabs(j.accumulated) / kDt;
+        const float inst_torque = std::fabs(j.accumulated_angular) / kDt;
+        j.force_ema += (inst_force - j.force_ema) * kEma;
+        j.torque_ema += (inst_torque - j.torque_ema) * kEma;
+
+        if (j.type == JointType::Weld && j.yield_torque > 0.0f &&
+            j.torque_ema > j.yield_torque) {
+            const float span = std::max(j.break_torque - j.yield_torque, 1.0f);
+            const float over = clampf((j.torque_ema - j.yield_torque) / span, 0.0f, 1.0f);
+            const Body& a = bodies_[j.a];
+            const Body& b = bodies_[j.b];
+            const float rel = (b.angle - a.angle) - j.ref_angle;
+            j.ref_angle += (rel >= 0.0f ? 1.0f : -1.0f) * over * 1.5f * kDt;
+        }
+
+        const bool force_break = j.break_force > 0.0f && j.force_ema > j.break_force;
+        const bool torque_break = j.break_torque > 0.0f && j.torque_ema > j.break_torque;
+        if (force_break || torque_break) {
+            joint_alive_[i] = 0;
+            j.alive = false;
+            ++j.generation;
+            joint_free_.push_back(i);
+            --joint_count_;
+        }
+    }
+}
+
+void World::solve_joints() {
+    for (uint32_t i = 0; i < joints_.size(); ++i) {
+        if (!joint_alive_[i]) continue;
+        Joint& j = joints_[i];
+        Body& a = bodies_[j.a];
+        Body& b = bodies_[j.b];
+        const float im_a = inv_mass_of(a);
+        const float im_b = inv_mass_of(b);
+        const float ii_a = inv_inertia_of(a);
+        const float ii_b = inv_inertia_of(b);
+        if (im_a + im_b == 0.0f) continue;
+
+        const Vec2 ra = rotate(j.local_a, a.angle);
+        const Vec2 rb = rotate(j.local_b, b.angle);
+        const Vec2 pa = a.pos + ra;
+        const Vec2 pb = b.pos + rb;
+        const Vec2 d = pb - pa;
+        const float len = length(d);
+        const Vec2 n = len > 1e-6f ? d * (1.0f / len) : Vec2{1.0f, 0.0f};
+        const float c = len - j.rest_length;
+
+        const Vec2 vrel = (b.vel + cross(b.ang_vel, rb)) -
+                          (a.vel + cross(a.ang_vel, ra));
+        const float vn = dot(vrel, n);
+        const float ca = cross(ra, n);
+        const float cb = cross(rb, n);
+        const float k = im_a + im_b + ii_a * ca * ca + ii_b * cb * cb;
+        if (k <= 0.0f) continue;
+
+        const float bias = clampf(kJointBeta * c / kDt, -kJointMaxBias, kJointMaxBias);
+        const float impulse = -(vn * 1.4f + bias) / k;
+        j.accumulated += impulse;
+
+        const Vec2 p = n * impulse;
+        apply_impulse(b, rb, p);
+        apply_impulse(a, ra, -p);
+
+        const float k_ang = ii_a + ii_b;
+        if (k_ang > 0.0f) {
+            const float rel = (b.angle - a.angle) - j.ref_angle;
+            float c_ang = 0.0f;
+            bool active = false;
+            if (j.type == JointType::Weld) {
+                c_ang = rel;
+                active = true;
+            } else if (j.has_limit) {
+                if (rel > j.limit_max) {
+                    c_ang = rel - j.limit_max;
+                    active = true;
+                } else if (rel < j.limit_min) {
+                    c_ang = rel - j.limit_min;
+                    active = true;
+                }
+            }
+            if (active) {
+                const float w_rel = b.ang_vel - a.ang_vel;
+                const float bias_ang = clampf(kJointBeta * c_ang / kDt,
+                                              -kJointMaxBias, kJointMaxBias);
+                const float impulse_ang = -(w_rel * 1.6f + bias_ang) / k_ang;
+                j.accumulated_angular += impulse_ang;
+                a.ang_vel -= impulse_ang * ii_a;
+                b.ang_vel += impulse_ang * ii_b;
+            }
+
+        }
+    }
+}
+
+void World::project_joints() {
+    constexpr int kIters = 3;
+    for (int iteration = 0; iteration < kIters; ++iteration) {
+        for (uint32_t i = 0; i < joints_.size(); ++i) {
+            if (!joint_alive_[i]) continue;
+            const Joint& j = joints_[i];
+            Body& a = bodies_[j.a];
+            Body& b = bodies_[j.b];
+            const float im_a = inv_mass_of(a);
+            const float im_b = inv_mass_of(b);
+            const float inv_sum = im_a + im_b;
+            if (inv_sum == 0.0f) continue;
+
+            const Vec2 pa = a.pos + rotate(j.local_a, a.angle);
+            const Vec2 pb = b.pos + rotate(j.local_b, b.angle);
+            const Vec2 d = pb - pa;
+            const float len = length(d);
+            const float error = len - j.rest_length;
+            if (std::fabs(error) <= kJointSlop) continue;
+
+            const Vec2 n = len > 1e-6f ? d * (1.0f / len) : Vec2{1.0f, 0.0f};
+            const float correction = (error - (error > 0.0f ? kJointSlop : -kJointSlop)) *
+                                     kJointCorrection / inv_sum;
+            if (im_a > 0.0f) a.pos += n * (correction * im_a);
+            if (im_b > 0.0f) b.pos -= n * (correction * im_b);
+        }
+    }
 }
 
 void World::integrate() {
@@ -566,6 +867,12 @@ void World::integrate() {
         } else {
             b.sleep_timer = 0.0f;
         }
+    }
+
+    for (uint32_t i = 0; i < bodies_.size(); ++i) {
+        if (!alive_[i]) continue;
+        bodies_[i].force = {};
+        bodies_[i].torque = 0.0f;
     }
 }
 
@@ -621,6 +928,26 @@ uint64_t World::state_hash() const {
         h.f32(b.inv_mass);
         h.f32(b.inv_inertia);
         h.f32(b.sleep_timer);
+    }
+    h.u32(joint_count_);
+    for (uint32_t i = 0; i < joints_.size(); ++i) {
+        if (!joint_alive_[i]) continue;
+        const Joint& j = joints_[i];
+        h.u32(i);
+        h.u32(j.generation);
+        h.u32(static_cast<uint32_t>(j.type));
+        h.u32(j.a);
+        h.u32(j.b);
+        h.f32(j.local_a.x);
+        h.f32(j.local_a.y);
+        h.f32(j.local_b.x);
+        h.f32(j.local_b.y);
+        h.f32(j.rest_length);
+        h.f32(j.ref_angle);
+        h.f32(j.break_force);
+        h.f32(j.break_torque);
+        h.f32(j.force_ema);
+        h.f32(j.torque_ema);
     }
     return h.digest();
 }

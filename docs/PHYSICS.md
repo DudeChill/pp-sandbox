@@ -32,7 +32,26 @@ projection pass after integration, so velocity solve adds no energy. Contact
 points are recomputed each tick from SAT plus reference-face clipping; local
 anchors are stored for the projection pass.
 
-## Open items (M1+)
+## Joints
+
+| Constant | Value | Source / status |
+|---|---|---|
+| joint bias | 0.2 | same order as contact Baumgarte before split impulse |
+| joint max bias velocity | 2 m/s | prevents explosive correction |
+| joint velocity damping | 1.4 linear, 1.6 angular | structural damping, tuned for beam stability |
+| joint projection iterations | 3, factor 0.8 | matches contact projection |
+| torque EMA factor | 0.1 per tick | smooths solver spikes for yield/break |
+| 2D depth for weld strength | 0.05 m | engineering assumption; documented in D009 |
+| plastic slip rate | 1.5 rad/s at ultimate | calibration; yields permanent set |
+
+## Materials
+
+See `src/sim/material.cpp`: density, friction, restitution, Young's modulus,
+yield and ultimate stress, toughness. Steel: 7850 kg/m³, 200 GPa, 250/450 MPa.
+Bone: 1900 kg/m³, 17 GPa, 130/150 MPa. These feed weld strength now and the
+penetration model in M3.
+
+## Open items (M2+)
 
 - Material table with density, modulus, strengths, toughness (prompt §13).
 - Energy audit for restitution and friction losses.

@@ -7,14 +7,22 @@ explainable by the state of the model. See `PROMPT.md` for the full specificatio
 
 ## Status
 
-Milestone **M0** (engine core) is complete: deterministic fixed-step rigid-body
-simulation, broadphase, contact solver with warm starting and position
-projection, sleeping, instanced 2D renderer, camera, grab/delete/spawn tools,
-headless test suite with numeric and determinism checks.
+Milestones **M0** (engine core) and **M1** (joints, ragdoll, materials,
+construction) are complete:
 
-M1–M6 (joints/ragdolls/materials, anatomy/physiology, ballistics, melee/gore,
-wiring/save-replay/secondary systems, content) are not implemented yet.
-See `STATE.md` for the task list and `docs/DECISIONS.md` for recorded choices.
+- deterministic fixed-step rigid-body simulation with warm-started contacts
+  and a position-projection pass;
+- distance, revolute, and weld joints with limits, break thresholds, and
+  plastic hinges driven by material section strength;
+- 13-part ragdoll, breakable rope, weld/cut tools;
+- material table (steel, aluminium, wood, glass, concrete, rubber, bone,
+  flesh) and per-body material assignment;
+- instanced 2D renderer, camera, grab/spawn/delete tools;
+- 18 headless tests covering physics, joints, materials, determinism,
+  allocation, and performance.
+
+M2–M6 (anatomy/physiology, ballistics, melee/gore, wiring/save-replay,
+secondary systems, content) are not implemented yet. See `STATE.md`.
 
 ## Build
 
@@ -49,6 +57,10 @@ The build deliberately uses `-j2` and `-ffp-contract=off`; do not add
 | Left drag | Grab a body with a spring |
 | Right click | Spawn a circle |
 | `B` | Spawn a box at the cursor |
+| `H` | Spawn a ragdoll with its feet at the cursor |
+| `O` | Spawn a hanging rope at the cursor |
+| `G` | Weld tool: click two bodies to weld them |
+| `C` | Cut tool: click near a joint to remove it |
 | `X` | Delete the body under the cursor |
 | Mouse wheel | Zoom |
 | `Space` | Pause/unpause |

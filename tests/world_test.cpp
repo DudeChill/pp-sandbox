@@ -3,6 +3,8 @@
 
 #include "framework.h"
 #include "sim/alloc.h"
+#include "sim/ragdoll.h"
+#include "sim/rope.h"
 #include "sim/world.h"
 
 using namespace sim;
@@ -157,4 +159,163 @@ TEST_CASE("500 bodies meet the 60 fps step budget") {
     std::printf("  avg step: %.3f ms (%u bodies, %u contacts)\n",
                 ms, w.body_count(), w.contact_count());
     CHECK(ms < 16.6);
+}
+
+TEST_CASE("distance joint holds its length under gravity") {
+    World w;
+    const BodyId anchor = w.add_static_box(Vec2{0.0f, 3.0f}, Vec2{0.1f, 0.1f});
+    const BodyId bob = w.add_box(Vec2{0.0f, 2.0f}, Vec2{0.1f, 0.1f});
+    const JointId j = w.add_distance_joint(anchor, bob, Vec2{0.0f, 3.0f}, Vec2{0.0f, 2.0f}, 1.0f);
+    InputFrame in;
+    for (int i = 0; i < 720; ++i) w.step(in);
+    const float d = length(w.get(bob).pos - w.get(anchor).pos);
+    CHECK_NEAR(d, 1.0f, 0.02f);
+    CHECK(w.joint_alive(j));
+}
+
+TEST_CASE("revolute joint keeps its anchor coincident") {
+    World w;
+    const BodyId anchor = w.add_static_box(Vec2{0.0f, 3.0f}, Vec2{0.1f, 0.1f});
+    const BodyId arm = w.add_box(Vec2{0.0f, 2.5f}, Vec2{0.05f, 0.5f});
+    const JointId j = w.add_revolute_joint(anchor, arm, Vec2{0.0f, 3.0f});
+    InputFrame in;
+    for (int i = 0; i < 480; ++i) w.step(in);
+    const Vec2 pa = w.get(anchor).pos + rotate(w.joint(j).local_a, w.get(anchor).angle);
+    const Vec2 pb = w.get(arm).pos + rotate(w.joint(j).local_b, w.get(arm).angle);
+    CHECK_NEAR(length(pb - pa), 0.0f, 0.01f);
+}
+
+TEST_CASE("weld joint preserves relative angle") {
+    World w;
+    const BodyId a = w.add_box(Vec2{0.0f, 2.0f}, Vec2{0.25f, 0.1f});
+    const BodyId b = w.add_box(Vec2{0.5f, 2.0f}, Vec2{0.25f, 0.1f});
+    const JointId j = w.add_weld_joint(a, b, Vec2{0.25f, 2.0f});
+    InputFrame in;
+    for (int i = 0; i < 480; ++i) w.step(in);
+    CHECK_NEAR(w.get(a).angle, w.get(b).angle, 0.01f);
+    CHECK(w.joint_alive(j));
+}
+
+TEST_CASE("breakable joint fails above its rated force") {
+    World w;
+    const BodyId anchor = w.add_static_box(Vec2{0.0f, 5.0f}, Vec2{0.1f, 0.1f});
+    const BodyId heavy = w.add_box(Vec2{0.0f, 4.0f}, Vec2{0.3f, 0.3f});
+    const JointId j = w.add_distance_joint(anchor, heavy, Vec2{0.0f, 5.0f},
+                                           Vec2{0.0f, 4.0f}, 1.0f, 100.0f);
+    InputFrame in;
+    for (int i = 0; i < 240; ++i) w.step(in);
+    CHECK(!w.joint_alive(j));
+    CHECK(w.get(heavy).pos.y < 3.0f);
+}
+
+TEST_CASE("ragdoll collapses plausibly and stays assembled") {
+    World w = make_ground();
+    Ragdoll r = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+    w.get(r.torso()).vel = Vec2{1.2f, 0.0f}; // topple
+    InputFrame in;
+    for (int i = 0; i < 480; ++i) w.step(in);
+
+    for (int i = 0; i < Ragdoll::kParts; ++i) {
+        const Body& b = w.get(r.parts[i]);
+        CHECK(std::fabs(b.pos.x) < 3.0f);
+        CHECK(b.pos.y > -0.2f);
+        CHECK(b.pos.y < 2.0f);
+    }
+    for (int i = 0; i < Ragdoll::kJoints; ++i) {
+        CHECK(w.joint_alive(r.joints[i]));
+        const Joint& j = w.joint(r.joints[i]);
+        const BodyId ba = w.id_at(j.a);
+        const BodyId bb = w.id_at(j.b);
+        CHECK(ba.valid());
+        CHECK(bb.valid());
+        const Vec2 pa = w.get(ba).pos + rotate(j.local_a, w.get(ba).angle);
+        const Vec2 pb = w.get(bb).pos + rotate(j.local_b, w.get(bb).angle);
+        CHECK(length(pb - pa) < 0.05f);
+    }
+    CHECK(w.get(r.head()).pos.y < 1.2f);
+}
+
+TEST_CASE("rope holds a load and keeps its segment lengths") {
+    World w;
+    Rope r = spawn_rope(w, Vec2{0.0f, 6.0f}, 6, 0.22f, 0.045f, 0.0f);
+    const BodyId load = w.add_box(Vec2{0.0f, 6.0f - 6.0f * 0.22f - 0.2f}, Vec2{0.15f, 0.15f});
+    w.add_distance_joint(r.links[5], load, w.get(r.links[5]).pos, w.get(load).pos, 0.2f, 0.0f);
+    InputFrame in;
+    for (int i = 0; i < 480; ++i) w.step(in);
+    for (int i = 0; i < r.count; ++i) CHECK(w.joint_alive(r.joints[i]));
+    CHECK(w.get(r.links[5]).pos.y < 5.0f);
+    CHECK(w.get(load).pos.y < 4.6f);
+}
+
+TEST_CASE("rope breaks above its rated tension") {
+    World w;
+    Rope r = spawn_rope(w, Vec2{0.0f, 6.0f}, 4, 0.2f, 0.04f, 200.0f);
+    const BodyId load = w.add_box(Vec2{0.0f, 5.0f}, Vec2{0.3f, 0.3f});
+    w.add_distance_joint(r.links[3], load, w.get(r.links[3]).pos, w.get(load).pos, 0.2f, 0.0f);
+    InputFrame in;
+    for (int i = 0; i < 240; ++i) w.step(in);
+    int alive = 0;
+    for (int i = 0; i < r.count; ++i) alive += w.joint_alive(r.joints[i]) ? 1 : 0;
+    CHECK(alive < r.count);
+    CHECK(w.get(load).pos.y < 4.0f);
+}
+
+TEST_CASE("weld plastic hinge yields within 10% of section prediction") {
+    constexpr float kHalfHeight = 0.01f;
+    constexpr float kDepth = 0.05f;
+    constexpr float kSection = kDepth * (2.0f * kHalfHeight) * (2.0f * kHalfHeight) / 6.0f;
+    const Material& steel = material(MaterialId::Steel);
+    const float m_yield = steel.yield_stress * kSection;
+    const float lever = 1.75f;
+    const float f_yield = m_yield / lever;
+
+    auto build = []() {
+        World w;
+        w.set_gravity(Vec2{0.0f, 0.0f});
+        const BodyId wall = w.add_static_box(Vec2{0.0f, 0.0f}, Vec2{0.1f, 0.1f});
+        w.set_material(wall, MaterialId::Steel);
+        BodyId parts[4];
+        for (int i = 0; i < 4; ++i) {
+            parts[i] = w.add_box(Vec2{0.4f + 0.5f * static_cast<float>(i), 0.0f},
+                                 Vec2{0.25f, kHalfHeight});
+            w.set_material(parts[i], MaterialId::Steel);
+        }
+        w.add_weld_joint(wall, parts[0], Vec2{0.15f, 0.0f});
+        for (int i = 0; i < 3; ++i) {
+            w.add_weld_joint(parts[i], parts[i + 1],
+                             Vec2{0.65f + 0.5f * static_cast<float>(i), 0.0f});
+        }
+        return std::tuple<World, BodyId, BodyId>(std::move(w), parts[3], wall);
+    };
+
+    {
+        auto [w, tip, wall] = build();
+        (void)wall;
+        JointId root{};
+        w.for_each_joint([&](JointId id, const Joint&) { if (!root.valid()) root = id; });
+        const float before = w.joint(root).ref_angle;
+        InputFrame in;
+        for (int i = 0; i < 480; ++i) {
+            const float ramp = std::min(1.0f, static_cast<float>(i + 1) * World::kDt);
+            w.get(tip).force = Vec2{0.0f, -0.9f * f_yield * ramp};
+            w.step(in);
+        }
+        CHECK_NEAR(w.joint(root).ref_angle, before, 0.003f);
+        CHECK(w.joint_alive(root));
+    }
+    {
+        auto [w, tip, wall] = build();
+        (void)wall;
+        JointId root{};
+        w.for_each_joint([&](JointId id, const Joint&) { if (!root.valid()) root = id; });
+        const float before = w.joint(root).ref_angle;
+        InputFrame in;
+        for (int i = 0; i < 480; ++i) {
+            const float ramp = std::min(1.0f, static_cast<float>(i + 1) * World::kDt);
+            w.get(tip).force = Vec2{0.0f, -1.1f * f_yield * ramp};
+            w.step(in);
+        }
+        CHECK(std::fabs(w.joint(root).ref_angle - before) > 0.01f);
+        CHECK(w.joint_alive(root));
+    }
 }

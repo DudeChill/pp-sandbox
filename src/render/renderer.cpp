@@ -1,5 +1,6 @@
 #include "renderer.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -210,6 +211,14 @@ void Renderer::circle(sim::Vec2 center, float radius, Color color) {
     if (instances_.size() >= instances_.capacity()) return;
     instances_.push_back({center.x, center.y, radius * 2.0f, radius * 2.0f, 0.0f,
                           color.r, color.g, color.b, color.a, 1.0f});
+}
+
+void Renderer::line(sim::Vec2 a, sim::Vec2 b, float thickness, Color color) {
+    const sim::Vec2 d = b - a;
+    const float len = sim::length(d);
+    if (len < 1e-6f) return;
+    box((a + b) * 0.5f, sim::Vec2{len * 0.5f, thickness * 0.5f},
+        std::atan2(d.y, d.x), color);
 }
 
 void Renderer::end() {

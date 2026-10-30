@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "handle.h"
+#include "material.h"
 #include "math.h"
 
 namespace sim {
@@ -28,10 +29,38 @@ struct Body {
     float restitution = 0.05f;
 
     Shape shape = Shape::Circle;
+    MaterialId material = MaterialId::Default;
     uint32_t generation = 0;
     bool dynamic = true;
     bool asleep = false;
     float sleep_timer = 0.0f;
+};
+
+enum class JointType : uint8_t { Distance = 0, Revolute = 1, Weld = 2 };
+
+struct JointTag {};
+using JointId = Handle<JointTag>;
+
+struct Joint {
+    JointType type = JointType::Revolute;
+    uint32_t a = 0;
+    uint32_t b = 0;
+    Vec2 local_a{};
+    Vec2 local_b{};
+    float rest_length = 0.0f;
+    float ref_angle = 0.0f;
+    float break_force = 0.0f;   // N; 0 = unbreakable
+    float break_torque = 0.0f;  // N·m; 0 = auto from materials
+    float yield_torque = 0.0f;  // N·m; plastic hinge threshold
+    bool has_limit = false;
+    float limit_min = 0.0f;
+    float limit_max = 0.0f;
+    float accumulated = 0.0f;
+    float accumulated_angular = 0.0f;
+    float force_ema = 0.0f;
+    float torque_ema = 0.0f;
+    uint32_t generation = 0;
+    bool alive = true;
 };
 
 struct InputFrame {
@@ -78,8 +107,16 @@ public:
 
     void remove(BodyId id);
     void clear();
+    void set_gravity(Vec2 g) { gravity_ = g; }
+    [[nodiscard]] Vec2 gravity() const { return gravity_; }
+    void set_material(BodyId id, MaterialId m);
 
     [[nodiscard]] bool alive(BodyId id) const;
+    [[nodiscard]] BodyId id_at(uint32_t index) const {
+        return (index < bodies_.size() && alive_[index] != 0)
+                   ? BodyId{index, bodies_[index].generation}
+                   : BodyId{};
+    }
     [[nodiscard]] Body& get(BodyId id);
     [[nodiscard]] const Body& get(BodyId id) const;
 
@@ -88,6 +125,26 @@ public:
     [[nodiscard]] uint64_t state_hash() const;
     [[nodiscard]] BodyId pick(Vec2 point) const;
     [[nodiscard]] const std::vector<Contact>& contacts() const { return contacts_; }
+
+    JointId add_distance_joint(BodyId a, BodyId b, Vec2 anchor_a, Vec2 anchor_b,
+                               float rest_length, float break_force = 0.0f);
+    JointId add_revolute_joint(BodyId a, BodyId b, Vec2 world_anchor,
+                               bool has_limit = false, float limit_min = 0.0f,
+                               float limit_max = 0.0f);
+    JointId add_weld_joint(BodyId a, BodyId b, Vec2 world_anchor,
+                           float break_force = 0.0f, float break_torque = 0.0f);
+    void remove_joint(JointId id);
+    [[nodiscard]] bool joint_alive(JointId id) const;
+    [[nodiscard]] Joint& joint(JointId id);
+    [[nodiscard]] const Joint& joint(JointId id) const;
+    [[nodiscard]] uint32_t joint_count() const { return joint_count_; }
+
+    template <class F>
+    void for_each_joint(F&& f) const {
+        for (uint32_t i = 0; i < joints_.size(); ++i) {
+            if (joint_alive_[i]) f(JointId{i, joints_[i].generation}, joints_[i]);
+        }
+    }
 
     void step(const InputFrame& in);
 
@@ -101,8 +158,11 @@ public:
 
 private:
     BodyId create_body();
+    JointId add_joint(const Joint& j);
     void broadphase();
     void solve();
+    void solve_joints();
+    void project_joints();
     void position_project();
     void integrate();
 
@@ -113,6 +173,11 @@ private:
     std::vector<AABB> aabbs_;
     std::vector<Contact> contacts_;
     std::vector<Contact> prev_contacts_;
+    std::vector<Joint> joints_;
+    std::vector<uint8_t> joint_alive_;
+    std::vector<uint32_t> joint_free_;
+    uint32_t joint_count_ = 0;
+    Vec2 gravity_{0.0f, -9.81f};
     uint32_t count_ = 0;
     uint32_t contact_count_ = 0;
 };

@@ -21,6 +21,7 @@ public:
     void begin(int width, int height, sim::Vec2 center, float view_height);
     void box(sim::Vec2 center, sim::Vec2 half, float angle, Color color);
     void circle(sim::Vec2 center, float radius, Color color);
+    void line(sim::Vec2 a, sim::Vec2 b, float thickness, Color color);
     void end();
 
 private:

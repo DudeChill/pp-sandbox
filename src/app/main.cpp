@@ -7,6 +7,8 @@
 #include "render/gl_api.h"
 #include "sim/alloc.h"
 #include "render/renderer.h"
+#include "sim/ragdoll.h"
+#include "sim/rope.h"
 #include "sim/world.h"
 
 using namespace sim;
@@ -95,6 +97,10 @@ int main(int, char**) {
     bool paused = false;
     BodyId grab{};
     Vec2 mouse_world{};
+    enum class Tool { None, Weld, Cut };
+    Tool tool = Tool::None;
+    BodyId weld_first{};
+    Vec2 weld_point{};
 
     double last = static_cast<double>(SDL_GetPerformanceCounter()) /
                   static_cast<double>(SDL_GetPerformanceFrequency());
@@ -115,7 +121,37 @@ int main(int, char**) {
             if (e.type == SDL_MOUSEBUTTONDOWN) {
                 const Vec2 p = cam.screen_to_world(e.button.x, e.button.y, width, height);
                 if (e.button.button == SDL_BUTTON_LEFT) {
-                    grab = world.pick(p);
+                    const BodyId hit = world.pick(p);
+                    if (tool == Tool::Weld) {
+                        if (hit.valid()) {
+                            if (!weld_first.valid()) {
+                                weld_first = hit;
+                                weld_point = p;
+                            } else if (hit != weld_first) {
+                                world.add_weld_joint(weld_first, hit, (weld_point + p) * 0.5f);
+                                weld_first = BodyId{};
+                            }
+                        }
+                    } else if (tool == Tool::Cut) {
+                        JointId best{};
+                        float best_d = 0.25f;
+                        world.for_each_joint([&](JointId id, const Joint& j) {
+                            const BodyId ba = world.id_at(j.a);
+                            const BodyId bb = world.id_at(j.b);
+                            if (!ba.valid() || !bb.valid()) return;
+                            const Vec2 pa = world.get(ba).pos + rotate(j.local_a, world.get(ba).angle);
+                            const Vec2 pb = world.get(bb).pos + rotate(j.local_b, world.get(bb).angle);
+                            const Vec2 m = (pa + pb) * 0.5f;
+                            const float d = length(m - p);
+                            if (d < best_d) {
+                                best_d = d;
+                                best = id;
+                            }
+                        });
+                        if (best.valid()) world.remove_joint(best);
+                    } else {
+                        grab = world.pick(p);
+                    }
                 } else if (e.button.button == SDL_BUTTON_RIGHT) {
                     world.add_circle(p, 0.25f);
                 }
@@ -132,6 +168,11 @@ int main(int, char**) {
                     case SDLK_ESCAPE: running = false; break;
                     case SDLK_SPACE: paused = !paused; break;
                     case SDLK_b: world.add_box(mouse_world, Vec2{0.4f, 0.4f}); break;
+                    case SDLK_h: spawn_ragdoll(world, mouse_world); break;
+                    case SDLK_o: spawn_rope(world, mouse_world, 10, 0.22f, 0.045f, 0.0f); break;
+                    case SDLK_g: tool = tool == Tool::Weld ? Tool::None : Tool::Weld;
+                                 weld_first = BodyId{}; break;
+                    case SDLK_c: tool = tool == Tool::Cut ? Tool::None : Tool::Cut; break;
                     case SDLK_x: {
                         const BodyId hit = world.pick(mouse_world);
                         if (hit.valid()) world.remove(hit);
@@ -190,6 +231,21 @@ int main(int, char**) {
                 renderer.circle(b.pos, b.radius, color);
             } else {
                 renderer.box(b.pos, b.half, b.angle, color);
+            }
+        });
+        world.for_each_joint([&](JointId, const Joint& j) {
+            const BodyId ba = world.id_at(j.a);
+            const BodyId bb = world.id_at(j.b);
+            if (!ba.valid() || !bb.valid()) return;
+            const Vec2 pa = world.get(ba).pos + rotate(j.local_a, world.get(ba).angle);
+            const Vec2 pb = world.get(bb).pos + rotate(j.local_b, world.get(bb).angle);
+            render::Color c{0.55f, 0.55f, 0.60f, 0.9f};
+            if (j.type == JointType::Weld) c = {0.25f, 0.80f, 0.90f, 0.95f};
+            if (j.type == JointType::Revolute) c = {0.85f, 0.75f, 0.30f, 0.95f};
+            if (length(pb - pa) < 0.01f) {
+                renderer.circle(pa, 0.02f, c);
+            } else {
+                renderer.line(pa, pb, 0.02f, c);
             }
         });
         renderer.end();
