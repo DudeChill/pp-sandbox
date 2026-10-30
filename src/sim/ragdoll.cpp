@@ -70,6 +70,37 @@ Ragdoll spawn_ragdoll(World& world, Vec2 feet_pos) {
                                                s.has_limit, s.limit_min, s.limit_max);
     }
 
+    // Tissue compartments in body-local space. Organs sit in the head, torso
+    // and pelvis; limbs carry muscle, bone, and a medial artery.
+    for (int i = 0; i < Ragdoll::kParts; ++i) {
+        const Vec2 h = kParts[i].half;
+        world.add_compartment(r.parts[i], Vec2{0.0f, 0.0f},
+                              Vec2{h.x * 0.8f, h.y * 0.8f}, TissueKind::Muscle);
+        if (i == 0) {
+            world.add_compartment(r.parts[i], Vec2{0.0f, h.y * 0.05f},
+                                  Vec2{h.x * 0.55f, h.y * 0.55f}, TissueKind::Brain);
+        } else if (i == 1) {
+            world.add_compartment(r.parts[i], Vec2{-h.x * 0.25f, h.y * 0.15f},
+                                  Vec2{h.x * 0.30f, h.y * 0.28f}, TissueKind::Heart);
+            world.add_compartment(r.parts[i], Vec2{-h.x * 0.45f, h.y * 0.25f},
+                                  Vec2{h.x * 0.25f, h.y * 0.45f}, TissueKind::Lung);
+            world.add_compartment(r.parts[i], Vec2{h.x * 0.45f, h.y * 0.25f},
+                                  Vec2{h.x * 0.25f, h.y * 0.45f}, TissueKind::Lung);
+        } else if (i == 2) {
+            world.add_compartment(r.parts[i], Vec2{0.0f, 0.0f},
+                                  Vec2{h.x * 0.7f, h.y * 0.7f}, TissueKind::Gut);
+        } else if (i >= 3 && i <= 10) {
+            world.add_compartment(r.parts[i], Vec2{0.0f, 0.0f},
+                                  Vec2{h.x * 0.30f, h.y * 0.85f}, TissueKind::Bone);
+            const float side = (i == 3 || i == 5 || i == 7 || i == 9) ? 1.0f : -1.0f;
+            world.add_compartment(r.parts[i], Vec2{side * h.x * 0.55f, 0.0f},
+                                  Vec2{h.x * 0.10f, h.y * 0.70f}, TissueKind::Artery);
+        } else {
+            world.add_compartment(r.parts[i], Vec2{0.0f, 0.0f},
+                                  Vec2{h.x * 0.4f, h.y * 0.5f}, TissueKind::Bone);
+        }
+    }
+
     // Vascular supply by part (ml/s at full tissue damage). The head and torso
     // are fatal; limbs bleed but are survivable without arterial involvement.
     constexpr float kVascularity[Ragdoll::kParts] = {

@@ -100,3 +100,22 @@ tracks blood as a scalar per vitals group.
 **Reason.** Keeps the tick allocation-free and deterministic while giving
 visible feedback. Volume conservation is asserted for the scalar, not particles.
 **Revisit.** M4 ties emitted particle volume to the blood deficit.
+
+## D014 — Versioned raw-pool scene format
+**Choice.** `save_scene` serializes body/joint/projectile slots (alive flags,
+generations), vitals groups, and the contact warm-start cache into a
+little-endian binary blob with magic + version. Load validates bounds and
+magic, rebuilds free lists, and rejects on mismatch.
+**Reason.** Preserves indices and handles exactly, so joints and replay hashes
+survive a round-trip; tests assert hash equality before and after 240 further
+ticks.
+**Revisit.** Add a section table and per-section versions when content grows.
+
+## D015 — Compartments as body-local AABBs
+**Choice.** Up to six rectangular tissue compartments per body (`Compartment`),
+plus organ kinds. Projectile and blade paths are clipped against them to get
+inside-length, damage accumulates at 70% per hit, bleeding comes from tissue
+rates, and severed arteries dominate.
+**Reason.** A testable channel model without a full mesh; keeps the tick
+allocation-free and deterministic.
+**Revisit.** Convex polygons + per-compartment blood supply in M4.

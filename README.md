@@ -21,6 +21,8 @@ construction) are complete:
 - 18 headless tests covering physics, joints, materials, determinism,
   allocation, and performance.
 
+Scene save/load (`F5`/`F9`) round-trips deterministically.
+
 A first **trauma/ballistics slice** (M2/M3) is in: 9 mm-class projectiles with
 gravity, drag, continuous collision, material-dependent penetration,
 energy-based wound damage, per-body bleeding into a shared blood volume,
@@ -70,10 +72,12 @@ The build deliberately uses `-j2` and `-ffp-contract=off`; do not add
 | `C` | Cut tool: click near a joint to remove it |
 | `F` | Fire a 9 mm round from the left of the cursor toward it |
 | `T` | Tourniquet tool: click a limb to stop its bleeding |
+| `V` | Blade tool: slash the body under the cursor (cuts tissue, severs limbs) |
 | `X` | Delete the body under the cursor |
 | Mouse wheel | Zoom |
 | `Space` | Pause/unpause |
 | `R` | Reset the demo scene |
+| `F5` / `F9` | Save / load `scene.ppb` |
 | `Esc` | Quit |
 
 ## Layout

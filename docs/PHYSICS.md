@@ -67,6 +67,26 @@ penetration model in M3.
 | death threshold | 0.9 L blood | class IV analogue |
 | vital death | head health ≤ 0.2 | brainstem analogue |
 
+## Tissue compartments
+
+| Kind | Health weight | Bleed (ml/s) |
+|---|---|---|
+| brain | 3.0 | 0 (fatal) |
+| heart | 2.5 | 2.0 |
+| liver | 1.5 | 2.0 |
+| lung | 1.2 | 1.5 |
+| gut | 0.8 | 1.0 |
+| artery | 1.5 | 14.0 (severed) |
+| vein | 0.6 | 4.0 |
+| bone | 0.8 | 0.05 |
+| muscle | 0.4 | 0.5 |
+| skin | 0.2 | 0.2 |
+
+Compartment damage adds 70% of the per-hit estimate, clamped to 1. Blade
+strokes damage a 16 cm path at `clamp(E/300, 0, 1)`; structural severance
+requires a bone or muscle compartment above 0.6 and removes the nearest joint
+within 0.45 m.
+
 ## Open items (M4+)
 
 - Material table with density, modulus, strengths, toughness (prompt §13).

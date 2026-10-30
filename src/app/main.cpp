@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <vector>
 
 #include "render/gl_api.h"
 #include "sim/alloc.h"
@@ -98,7 +100,7 @@ int main(int, char**) {
     bool paused = false;
     BodyId grab{};
     Vec2 mouse_world{};
-    enum class Tool { None, Weld, Cut, Tourniquet };
+    enum class Tool { None, Weld, Cut, Tourniquet, Blade };
     Tool tool = Tool::None;
     BodyId weld_first{};
     Vec2 weld_point{};
@@ -146,6 +148,10 @@ int main(int, char**) {
                                 world.add_weld_joint(weld_first, hit, (weld_point + p) * 0.5f);
                                 weld_first = BodyId{};
                             }
+                        }
+                    } else if (tool == Tool::Blade) {
+                        if (hit.valid()) {
+                            world.apply_blade(hit, p, Vec2{1.0f, 0.0f}, 350.0f);
                         }
                     } else if (tool == Tool::Tourniquet) {
                         if (hit.valid()) world.apply_tourniquet(hit);
@@ -198,6 +204,7 @@ int main(int, char**) {
                     case SDLK_c: tool = tool == Tool::Cut ? Tool::None : Tool::Cut; break;
                     case SDLK_t: tool = tool == Tool::Tourniquet ? Tool::None : Tool::Tourniquet;
                                  break;
+                    case SDLK_v: tool = tool == Tool::Blade ? Tool::None : Tool::Blade; break;
                     case SDLK_x: {
                         const BodyId hit = world.pick(mouse_world);
                         if (hit.valid()) world.remove(hit);
@@ -205,6 +212,30 @@ int main(int, char**) {
                         break;
                     }
                     case SDLK_r: build_scene(world); blood.clear(); wounds_seen = 0; break;
+                    case SDLK_F5: {
+                        std::vector<uint8_t> blob;
+                        world.save_scene(blob);
+                        std::ofstream out("scene.ppb", std::ios::binary);
+                        out.write(reinterpret_cast<const char*>(blob.data()),
+                                  static_cast<std::streamsize>(blob.size()));
+                        std::printf("saved scene.ppb (%zu bytes)\n", blob.size());
+                        break;
+                    }
+                    case SDLK_F9: {
+                        std::ifstream in_file("scene.ppb", std::ios::binary);
+                        std::vector<uint8_t> blob((std::istreambuf_iterator<char>(in_file)),
+                                                  std::istreambuf_iterator<char>());
+                        if (!in_file && blob.empty()) {
+                            std::printf("no scene.ppb\n");
+                        } else if (world.load_scene(blob.data(), blob.size())) {
+                            blood.clear();
+                            wounds_seen = 0;
+                            std::printf("loaded scene.ppb\n");
+                        } else {
+                            std::printf("scene.ppb rejected\n");
+                        }
+                        break;
+                    }
                     default: break;
                 }
             }

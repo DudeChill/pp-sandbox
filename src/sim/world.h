@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -10,6 +11,19 @@
 namespace sim {
 
 enum class Shape : uint8_t { Circle = 0, Box = 1 };
+
+enum class TissueKind : uint8_t {
+    Skin = 0, Fat, Muscle, Bone, Artery, Vein, Nerve,
+    Brain, Heart, Lung, Liver, Gut
+};
+
+struct Compartment {
+    Vec2 center{};   // body-local
+    Vec2 half{};     // body-local half extents
+    TissueKind kind = TissueKind::Muscle;
+    float damage = 0.0f;
+    bool severed = false;
+};
 
 struct ProjectileTag {};
 using ProjectileId = Handle<ProjectileTag>;
@@ -70,6 +84,10 @@ struct Body {
     uint32_t group = UINT32_MAX;
     bool vital = false;
     bool tourniquet = false;
+
+    static constexpr int kMaxCompartments = 6;
+    Compartment compartments[kMaxCompartments]{};
+    uint8_t compartment_count = 0;
 };
 
 enum class JointType : uint8_t { Distance = 0, Revolute = 1, Weld = 2 };
@@ -147,6 +165,9 @@ public:
     [[nodiscard]] Vec2 gravity() const { return gravity_; }
     void set_material(BodyId id, MaterialId m);
     void apply_tourniquet(BodyId id);
+    void add_compartment(BodyId id, Vec2 local_center, Vec2 local_half, TissueKind kind);
+    // Applies a blade stroke; returns true if it severed a joint (dismemberment).
+    bool apply_blade(BodyId id, Vec2 world_point, Vec2 dir, float energy_j);
 
     [[nodiscard]] bool alive(BodyId id) const;
     [[nodiscard]] BodyId id_at(uint32_t index) const {
@@ -202,6 +223,11 @@ public:
     [[nodiscard]] const std::vector<WoundEvent>& wounds() const { return wounds_; }
 
     uint32_t create_group(const Vitals& v);
+
+    // Versioned binary scene format. Projectiles are transient but serialized
+    // so a round-trip preserves the deterministic state hash.
+    bool save_scene(std::vector<uint8_t>& out) const;
+    bool load_scene(const void* data, std::size_t size);
     [[nodiscard]] Vitals& vitals(uint32_t group);
     [[nodiscard]] const Vitals& vitals(uint32_t group) const;
     [[nodiscard]] uint32_t group_count() const {

@@ -35,12 +35,19 @@ Implemented:
   headshot death, limb bleed without immediate death, drag/gravity,
   tourniquet-stabilised blood volume.
 
-## Next tasks (M4)
-1. Per-compartment anatomy with wound channels instead of lumped damage.
-2. Ballistic coefficient tables (G7), fragmentation, temporary cavity.
-3. Treatment items: tourniquet, chest seal, fluids; vitals overlay.
+## M4 progress (2026-10-30)
+- Tissue compartments (muscle, bone, artery, brain, heart, lungs, gut) with
+  path-length wound channels; artery severance drives hemorrhage.
+- Blade strokes with accumulated structural damage and joint severance.
+- Versioned binary scene save/load with warm-start cache; round-trip
+  determinism test over 240 further ticks.
+
+## Next tasks (M5)
+1. Ballistic coefficient tables (G7), ammunition classes, fragmentation.
+2. Wiring/logic, motors, thrusters.
+3. Replay recording and hash verification.
 4. Blood volume conservation between particles and vitals.
-5. Melee cutting model and gore presentation.
+5. Heat/electricity/pressure systems.
 
 ## Known gaps / accepted debt
 - Weld plasticity is a hinge model, not a continuum mass-spring lattice; beam
@@ -52,9 +59,11 @@ Implemented:
   `set_material`; ragdoll density is a scaled value for 2D depth.
 - No multithreading yet, so the thread-count determinism gate is deferred to M5.
 - Renderer is debug-grade: flat quads/discs, no text or UI widgets.
-- Damage is a lumped energy model: no per-compartment channels, no temporary
-  cavity, no fragmentation. 5.56-class rounds therefore over-penetrate compared
-  with the gelatin table.
+- Wound channels are rectangular-compartment approximations: no temporary
+  cavity, no fragmentation, no bone blocking. 5.56-class rounds over-penetrate
+  relative to the gelatin table.
+- Only one bladed stroke geometry (horizontal, 16 cm); no edge angle or
+  sliding velocity.
 - Blood particles are cosmetic; emitted volume is not yet tied to blood loss.
 
 ## Performance log
@@ -64,3 +73,4 @@ Implemented:
 | 2026-10-30 | demo scene, llvmpipe | 540–580 fps |
 | 2026-10-30 | M1 tests, 500 bodies | 0.6 ms/step |
 | 2026-10-30 | demo scene + 50 projectiles | 390–550 fps (llvmpipe) |
+| 2026-10-30 | scene save/load round-trip | 3.3 KB, hashes equal |

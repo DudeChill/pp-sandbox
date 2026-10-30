@@ -417,3 +417,70 @@ TEST_CASE("tourniquet stops bleeding from a limb wound") {
     CHECK(treated >= bleeding - 1.0f);
     CHECK(!w.vitals(group).dead);
 }
+
+TEST_CASE("severed artery hemorrhages far more than muscle damage") {
+    auto shoot = [](bool with_artery) {
+        World w;
+        const BodyId block = w.add_static_box(Vec2{0.0f, 0.0f}, Vec2{0.1f, 0.1f});
+        w.set_material(block, MaterialId::Flesh);
+        const uint32_t group = w.create_group(Vitals{});
+        w.get(block).group = group;
+        w.add_compartment(block, Vec2{0.0f, 0.0f}, Vec2{0.08f, 0.08f}, TissueKind::Muscle);
+        if (with_artery) {
+            w.add_compartment(block, Vec2{0.0f, 0.0f}, Vec2{0.02f, 0.02f}, TissueKind::Artery);
+        }
+        w.spawn_projectile(Vec2{-2.0f, 0.0f}, Vec2{350.0f, 0.0f}, 0.008f, 0.0045f, 0.0f);
+        InputFrame in;
+        for (int i = 0; i < 30; ++i) w.step(in);
+        return w.get(block).bleed_ml_s;
+    };
+    CHECK(shoot(true) > 5.0f);
+    CHECK(shoot(false) < 2.0f);
+}
+
+TEST_CASE("repeated blade strokes sever a limb at its joint") {
+    World w;
+    w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
+    Ragdoll r = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+    const BodyId arm = r.parts[3];
+    const Vec2 point = w.get(arm).pos;
+    const uint32_t before = w.joint_count();
+    bool severed = false;
+    for (int i = 0; i < 8 && !severed; ++i) {
+        severed = w.apply_blade(arm, point, Vec2{1.0f, 0.0f}, 400.0f);
+    }
+    CHECK(severed);
+    CHECK(w.joint_count() < before);
+    CHECK(w.get(arm).bleed_ml_s > 0.0f);
+}
+
+TEST_CASE("scene binary round-trip preserves state and future evolution") {
+    World w;
+    w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
+    Ragdoll r = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+    w.spawn_projectile(Vec2{-2.0f, 0.66f}, Vec2{350.0f, 0.0f}, 0.008f, 0.0045f, 0.0f);
+    w.add_box(Vec2{3.0f, 4.0f}, Vec2{0.3f, 0.3f});
+    InputFrame in;
+    for (int i = 0; i < 120; ++i) w.step(in);
+
+    std::vector<uint8_t> blob;
+    CHECK(w.save_scene(blob));
+    CHECK(blob.size() > 64);
+
+    World loaded;
+    CHECK(loaded.load_scene(blob.data(), blob.size()));
+    CHECK(loaded.state_hash() == w.state_hash());
+
+    for (int i = 0; i < 240; ++i) {
+        w.step(in);
+        loaded.step(in);
+        if ((i % 60) == 0) CHECK(loaded.state_hash() == w.state_hash());
+    }
+    CHECK(loaded.state_hash() == w.state_hash());
+
+    std::vector<uint8_t> corrupt = blob;
+    corrupt[3] ^= 0xFF;
+    World bad;
+    CHECK(!bad.load_scene(corrupt.data(), corrupt.size()));
+    CHECK(!bad.load_scene(blob.data(), 8));
+}

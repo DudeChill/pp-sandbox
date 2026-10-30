@@ -11,6 +11,7 @@ set(PP_FP_FLAGS -ffp-contract=off -fno-fast-math)
 
 add_library(pp_sim STATIC
     src/sim/world.cpp
+    src/sim/serialize.cpp
     src/sim/material.cpp
     src/sim/ragdoll.cpp
     src/sim/rope.cpp

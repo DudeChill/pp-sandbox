@@ -227,6 +227,90 @@ bool collide(const Body& a, const Body& b, Contact& c) {
     return collide_box_box(a, b, c);
 }
 
+float rect_overlap_length(Vec2 origin, Vec2 delta, Vec2 center, Vec2 half) {
+    float t0 = 0.0f;
+    float t1 = 1.0f;
+    const float p[4] = {-delta.x, delta.x, -delta.y, delta.y};
+    const float q[4] = {origin.x - (center.x - half.x), (center.x + half.x) - origin.x,
+                        origin.y - (center.y - half.y), (center.y + half.y) - origin.y};
+    for (int i = 0; i < 4; ++i) {
+        if (std::fabs(p[i]) < 1e-9f) {
+            if (q[i] < 0.0f) return 0.0f;
+            continue;
+        }
+        const float r = q[i] / p[i];
+        if (p[i] < 0.0f) {
+            if (r > t1) return 0.0f;
+            if (r > t0) t0 = r;
+        } else {
+            if (r < t0) return 0.0f;
+            if (r < t1) t1 = r;
+        }
+    }
+    return (t1 - t0) * length(delta);
+}
+
+float tissue_weight(TissueKind kind) {
+    switch (kind) {
+        case TissueKind::Brain: return 3.0f;
+        case TissueKind::Heart: return 2.5f;
+        case TissueKind::Liver: return 1.5f;
+        case TissueKind::Lung: return 1.2f;
+        case TissueKind::Gut: return 0.8f;
+        case TissueKind::Artery: return 1.5f;
+        case TissueKind::Vein: return 0.6f;
+        case TissueKind::Nerve: return 1.0f;
+        case TissueKind::Bone: return 0.8f;
+        case TissueKind::Muscle: return 0.4f;
+        case TissueKind::Skin: return 0.2f;
+        case TissueKind::Fat: return 0.1f;
+    }
+    return 0.2f;
+}
+
+float tissue_bleed_rate(TissueKind kind) {
+    switch (kind) {
+        case TissueKind::Artery: return 14.0f;
+        case TissueKind::Vein: return 4.0f;
+        case TissueKind::Brain: return 0.0f;
+        case TissueKind::Heart: return 2.0f;
+        case TissueKind::Lung: return 1.5f;
+        case TissueKind::Liver: return 2.0f;
+        case TissueKind::Gut: return 1.0f;
+        case TissueKind::Muscle: return 0.5f;
+        case TissueKind::Skin: return 0.2f;
+        case TissueKind::Bone: return 0.05f;
+        case TissueKind::Fat: return 0.05f;
+        case TissueKind::Nerve: return 0.05f;
+    }
+    return 0.0f;
+}
+
+struct WoundResult {
+    float worst = 0.0f;
+    float bleed = 0.0f;
+};
+
+WoundResult apply_local_wound(Body& body, Vec2 entry, Vec2 exit, float energy_factor) {
+    WoundResult result;
+    const Vec2 segment = exit - entry;
+    for (uint8_t ci = 0; ci < body.compartment_count; ++ci) {
+        Compartment& comp = body.compartments[ci];
+        const float inside = rect_overlap_length(entry, segment, comp.center, comp.half);
+        if (inside <= 0.0f) continue;
+        const float extent = 2.0f * std::max(comp.half.x, comp.half.y);
+        const float dmg = clampf(inside / std::max(extent, 1e-4f) * energy_factor * 1.2f,
+                                 0.0f, 1.0f);
+        comp.damage = clampf(comp.damage + dmg * 0.7f, 0.0f, 1.0f);
+        if (comp.kind == TissueKind::Artery && dmg > 0.2f) comp.severed = true;
+        result.worst = std::max(result.worst, comp.damage * tissue_weight(comp.kind));
+        result.bleed += comp.severed ? tissue_bleed_rate(comp.kind)
+                                     : comp.damage * tissue_bleed_rate(comp.kind);
+    }
+    result.worst = clampf(result.worst, 0.0f, 1.0f);
+    return result;
+}
+
 bool ray_circle_hit(Vec2 origin, Vec2 delta, Vec2 center, float radius,
                     float& t_in, float& chord) {
     const Vec2 m = origin - center;
@@ -456,6 +540,19 @@ void World::apply_tourniquet(BodyId id) {
     b.bleed_ml_s = 0.0f;
 }
 
+void World::add_compartment(BodyId id, Vec2 local_center, Vec2 local_half,
+                            TissueKind kind) {
+    if (!alive(id)) return;
+    Body& b = bodies_[id.index];
+    if (b.compartment_count >= Body::kMaxCompartments) return;
+    Compartment& c = b.compartments[b.compartment_count++];
+    c.center = local_center;
+    c.half = local_half;
+    c.kind = kind;
+    c.damage = 0.0f;
+    c.severed = false;
+}
+
 void World::set_material(BodyId id, MaterialId m) {
     if (!alive(id)) return;
     Body& b = bodies_[id.index];
@@ -614,6 +711,63 @@ const Vitals& World::vitals(uint32_t group) const {
     return groups_[group];
 }
 
+bool World::apply_blade(BodyId id, Vec2 world_point, Vec2 dir, float energy_j) {
+    if (!alive(id)) return false;
+    Body& body = bodies_[id.index];
+    if (body.compartment_count == 0) return false;
+
+    const Vec2 d = normalize(dir);
+    const float half_len = 0.08f;
+    const Vec2 entry_world = world_point - d * half_len;
+    const Vec2 exit_world = world_point + d * half_len;
+    const Vec2 entry = inv_rotate(entry_world - body.pos, -body.angle);
+    const Vec2 exit = inv_rotate(exit_world - body.pos, -body.angle);
+    const float energy_factor = clampf(energy_j / 300.0f, 0.0f, 1.0f);
+    const WoundResult wr = apply_local_wound(body, entry, exit, energy_factor);
+    body.health = std::max(0.0f, 1.0f - wr.worst);
+    if (!body.tourniquet) {
+        body.bleed_ml_s = std::max(body.bleed_ml_s, wr.bleed);
+    }
+    if (body.group < groups_.size() && body.vital && body.health <= 0.2f) {
+        groups_[body.group].dead = true;
+    }
+    body.asleep = false;
+    body.sleep_timer = 0.0f;
+    if (wounds_.size() >= 256) wounds_.erase(wounds_.begin());
+    wounds_.push_back(WoundEvent{world_point, d, energy_j, wr.worst, id.index});
+
+    bool severed_joint = false;
+    float structural = 0.0f;
+    for (uint8_t ci = 0; ci < body.compartment_count; ++ci) {
+        const Compartment& comp = body.compartments[ci];
+        if (comp.kind == TissueKind::Bone || comp.kind == TissueKind::Muscle) {
+            structural = std::max(structural, comp.damage);
+        }
+    }
+    if (structural > 0.6f) {
+        float best_dist = 0.45f;
+        JointId best{};
+        for (uint32_t ji = 0; ji < joints_.size(); ++ji) {
+            if (!joint_alive_[ji]) continue;
+            Joint& j = joints_[ji];
+            if (j.a != id.index && j.b != id.index) continue;
+            const Body& other = bodies_[j.a == id.index ? j.b : j.a];
+            const Vec2 anchor = other.pos + rotate(j.a == id.index ? j.local_b : j.local_a,
+                                                   other.angle);
+            const float dist = length(anchor - world_point);
+            if (dist < best_dist) {
+                best_dist = dist;
+                best = JointId{ji, j.generation};
+            }
+        }
+        if (best.valid()) {
+            remove_joint(best);
+            severed_joint = true;
+        }
+    }
+    return severed_joint;
+}
+
 void World::step_projectiles() {
     constexpr float kPi = 3.14159265358979323846f;
     for (uint32_t i = 0; i < projectiles_.size(); ++i) {
@@ -669,13 +823,35 @@ void World::step_projectiles() {
         const float damage = clampf(depth / 0.20f, 0.0f, 1.0f) *
                              clampf(path / 0.05f, 0.0f, 1.0f);
 
-        body.health = std::max(0.0f, body.health - damage);
-        if (body.vascularity > 0.0f) {
-            body.bleed_ml_s = std::max(body.bleed_ml_s, damage * body.vascularity);
-        }
-        if (body.group < groups_.size()) {
-            Vitals& v = groups_[body.group];
-            if (body.vital && body.health <= 0.2f) v.dead = true;
+        float applied_damage = damage;
+        if (body.compartment_count > 0) {
+            const Vec2 entry_local = inv_rotate(hit_point - body.pos, -body.angle);
+            const Vec2 exit_local =
+                inv_rotate(hit_point + dir * path - body.pos, -body.angle);
+            const Vec2 segment = exit_local - entry_local;
+            const float energy_factor = clampf(depth / 0.20f, 0.0f, 1.0f);
+
+            const WoundResult wr =
+                apply_local_wound(body, entry_local, exit_local, energy_factor);
+            applied_damage = wr.worst;
+            body.health = std::max(0.0f, 1.0f - applied_damage);
+            if (!body.tourniquet) {
+                body.bleed_ml_s = std::max(body.bleed_ml_s, wr.bleed);
+            }
+            if (body.group < groups_.size()) {
+                Vitals& v = groups_[body.group];
+                if (body.vital && body.health <= 0.2f) v.dead = true;
+            }
+        } else {
+            body.health = std::max(0.0f, body.health - applied_damage);
+            if (body.vascularity > 0.0f) {
+                body.bleed_ml_s =
+                    std::max(body.bleed_ml_s, applied_damage * body.vascularity);
+            }
+            if (body.group < groups_.size()) {
+                Vitals& v = groups_[body.group];
+                if (body.vital && body.health <= 0.2f) v.dead = true;
+            }
         }
 
         const Vec2 impulse = dir * (p.mass * impact_speed * fraction);
@@ -1178,6 +1354,12 @@ uint64_t World::state_hash() const {
         h.f32(b.inv_mass);
         h.f32(b.inv_inertia);
         h.f32(b.sleep_timer);
+        h.u32(b.compartment_count);
+        for (uint8_t c = 0; c < b.compartment_count; ++c) {
+            const Compartment& comp = b.compartments[c];
+            h.f32(comp.damage);
+            h.boolean(comp.severed);
+        }
     }
     h.u32(projectile_count_);
     for (uint32_t i = 0; i < projectiles_.size(); ++i) {
