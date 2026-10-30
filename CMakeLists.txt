@@ -18,9 +18,11 @@ add_library(pp_sim STATIC
     src/sim/world.cpp
     src/sim/serialize.cpp
     src/sim/ammo.cpp
+    src/sim/weapon.cpp
     src/sim/material.cpp
     src/sim/ragdoll.cpp
     src/sim/rope.cpp
+    src/sim/cloth.cpp
     src/sim/alloc.cpp
 )
 target_include_directories(pp_sim PUBLIC src)
@@ -67,6 +69,7 @@ if(PP_BUILD_APP AND PP_SDL2_TARGET AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/a
         src/app/main.cpp
         src/render/renderer.cpp
         src/render/gl_api.cpp
+        src/app/audio.cpp
     )
     target_include_directories(pp PRIVATE src)
     target_link_libraries(pp PRIVATE pp_sim ${PP_SDL2_TARGET})

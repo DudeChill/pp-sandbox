@@ -95,6 +95,13 @@ void write_body(Writer& w, const Body& b) {
     w.u32(b.group);
     w.flag(b.vital);
     w.flag(b.tourniquet);
+    w.f32(b.voltage);
+    w.f32(b.shock_s);
+    w.flag(b.chest_sealed);
+    w.flag(b.splinted);
+    w.f32(b.armour_thickness_m);
+    w.f32(b.armour_strength_pa);
+    w.flag(b.armour_soft);
     w.u8(static_cast<uint8_t>(b.component));
     w.flag(b.signal);
     w.flag(b.signal_in);
@@ -139,6 +146,13 @@ bool read_body(Reader& r, Body& b) {
     b.group = r.u32();
     b.vital = r.flag();
     b.tourniquet = r.flag();
+    b.voltage = r.f32();
+    b.shock_s = r.f32();
+    b.chest_sealed = r.flag();
+    b.splinted = r.flag();
+    b.armour_thickness_m = r.f32();
+    b.armour_strength_pa = r.f32();
+    b.armour_soft = r.flag();
     b.component = static_cast<Component>(r.u8());
     b.signal = r.flag();
     b.signal_in = r.flag();
@@ -207,6 +221,10 @@ bool World::save_scene(std::vector<uint8_t>& out) const {
         w.f32(v.blood_ml);
         w.f32(v.emitted_ml);
         w.f32(v.bleed_ml_s);
+        w.f32(v.infuse_ml);
+        w.f32(v.hypoxia);
+        w.f32(v.arrest_s);
+        w.flag(v.arrested);
         w.flag(v.unconscious);
         w.flag(v.dead);
     }
@@ -236,6 +254,8 @@ bool World::save_scene(std::vector<uint8_t>& out) const {
         w.f32(p.radius);
         w.f32(p.drag_k);
         w.f32(p.fragmentation_speed);
+        w.f32(p.yaw_rad);
+        w.f32(p.yaw_gain_per_m);
         w.u8(p.fragments);
         w.u32(p.generation);
         w.flag(p.alive);
@@ -336,6 +356,10 @@ bool World::load_scene(const void* data, std::size_t size) {
         v.blood_ml = r.f32();
         v.emitted_ml = r.f32();
         v.bleed_ml_s = r.f32();
+        v.infuse_ml = r.f32();
+        v.hypoxia = r.f32();
+        v.arrest_s = r.f32();
+        v.arrested = r.flag();
         v.unconscious = r.flag();
         v.dead = r.flag();
         groups.push_back(v);
@@ -380,6 +404,8 @@ bool World::load_scene(const void* data, std::size_t size) {
         p.radius = r.f32();
         p.drag_k = r.f32();
         p.fragmentation_speed = r.f32();
+        p.yaw_rad = r.f32();
+        p.yaw_gain_per_m = r.f32();
         p.fragments = r.u8();
         p.generation = r.u32();
         p.alive = r.flag();

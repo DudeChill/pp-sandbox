@@ -145,3 +145,41 @@ frames, and the final state hash.
 "same inputs, same state" contract.
 **Revisit.** Add a fracture pattern driven by impact point and material
 toughness instead of a fixed quadrant split.
+
+## D019 — Physiology at 60 Hz
+**Choice.** `update_vitals` runs every fourth 240 Hz tick and integrates a full
+1/60 s (`kPhysioDt = 4·dt`). Earlier it integrated 1/240 per call, making every
+rate (bleed, infusion, hypoxia) four times too slow and inconsistent with
+`PHYSICS.md`.
+**Reason.** Rates now match their units and the treatment/arrest tests.
+**Revisit.** If physiology ever moves to its own cadence, carry the elapsed time
+explicitly.
+
+## D020 — Armour as energy work
+**Choice.** Armour stops a round when `E ≤ σ·A·thickness`; a stop converts the
+round into blunt trauma scaled by soft/hard armour, otherwise the work is
+subtracted before penetration.
+**Reason.** Testable, monotonic, and captures vest-vs-plate behaviour without a
+layered armour solver.
+**Revisit.** Add NIJ-style layers, backface deformation, and spall fragments.
+
+## D021 — Electricity over the signal graph
+**Choice.** Batteries energise wires; wired bodies with vitals accumulate shock
+and arrest after 0.2 s. No separate circuit solver.
+**Reason.** Reuses the deterministic wire evaluation and keeps the node graph
+testable.
+**Revisit.** Add resistance, current division, fuses, and arcing.
+
+## D022 — Procedural audio
+**Choice.** Synthesised tone/noise bursts through `SDL_QueueAudio`; no asset
+files. Timbres and delays are pure functions in `sim/sound_model.h`.
+**Reason.** No asset pipeline; works headless (device failure disables audio);
+mapping is unit-tested.
+**Revisit.** Add a mixer graph and spatialisation when content grows.
+
+## D023 — Mass-spring cloth and blobs
+**Choice.** Cloth is a grid of small bodies with distance constraints; a soft
+blob is a braced ring. Both are tearable and use the existing solver.
+**Reason.** Gives cloth/soft-body behaviour without a new solver; tests cover
+drape and constraint retention.
+**Revisit.** Add area/volume constraints and a dedicated PBD pass if needed.

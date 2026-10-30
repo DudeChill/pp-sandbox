@@ -14,6 +14,8 @@ struct AmmoSpec {
     float drag_k;
     float fragmentation_speed;  // m/s; 0 = never fragments
     uint8_t fragments;
+    float yaw_gain_per_m;       // rad of yaw per metre inside tissue
+    float reference_barrel_mm;  // barrel that produces muzzle_speed
 };
 
 int ammo_count();

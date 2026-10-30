@@ -291,7 +291,8 @@ struct WoundResult {
     float bleed = 0.0f;
 };
 
-WoundResult apply_local_wound(Body& body, Vec2 entry, Vec2 exit, float energy_factor) {
+WoundResult apply_local_wound(Body& body, Vec2 entry, Vec2 exit, float energy_factor,
+                              float temporary_cavity_m = 0.0f) {
     WoundResult result;
     const Vec2 segment = exit - entry;
     for (uint8_t ci = 0; ci < body.compartment_count; ++ci) {
@@ -301,7 +302,11 @@ WoundResult apply_local_wound(Body& body, Vec2 entry, Vec2 exit, float energy_fa
         const float extent = 2.0f * std::max(comp.half.x, comp.half.y);
         const float dmg = clampf(inside / std::max(extent, 1e-4f) * energy_factor * 1.2f,
                                  0.0f, 1.0f);
-        comp.damage = clampf(comp.damage + dmg * 0.7f, 0.0f, 1.0f);
+        const float stretch = (comp.kind == TissueKind::Lung ||
+                               comp.kind == TissueKind::Liver)
+                                  ? clampf(temporary_cavity_m / 0.15f, 0.0f, 1.0f) * 0.3f
+                                  : 0.0f;
+        comp.damage = clampf(comp.damage + dmg * 0.7f + stretch, 0.0f, 1.0f);
         if (comp.kind == TissueKind::Artery && dmg > 0.2f) comp.severed = true;
         result.worst = std::max(result.worst, comp.damage * tissue_weight(comp.kind));
         result.bleed += comp.severed ? tissue_bleed_rate(comp.kind)
@@ -629,6 +634,53 @@ void World::add_compartment(BodyId id, Vec2 local_center, Vec2 local_half,
     c.severed = false;
 }
 
+void World::set_battery(BodyId id, float volts) {
+    if (!alive(id)) return;
+    Body& b = bodies_[id.index];
+    b.component = Component::Battery;
+    b.voltage = volts;
+    b.signal = true;  // batteries always energise their wires
+}
+
+void World::set_armour(BodyId id, float thickness_m, float strength_pa, bool soft) {
+    if (!alive(id)) return;
+    Body& b = bodies_[id.index];
+    b.armour_thickness_m = thickness_m;
+    b.armour_strength_pa = strength_pa;
+    b.armour_soft = soft;
+}
+
+void World::apply_iv(BodyId id, float ml) {
+    if (!alive(id)) return;
+    Body& b = bodies_[id.index];
+    if (b.group >= groups_.size()) return;
+    groups_[b.group].infuse_ml += std::max(0.0f, ml);
+}
+
+void World::apply_blood_bag(BodyId id) { apply_iv(id, 450.0f); }
+
+void World::defibrillate(BodyId id) {
+    if (!alive(id)) return;
+    Body& b = bodies_[id.index];
+    if (b.group >= groups_.size()) return;
+    Vitals& v = groups_[b.group];
+    if (!v.dead && v.arrested && v.blood_ml >= 1200.0f) {
+        v.arrested = false;
+        v.arrest_s = 0.0f;
+        v.unconscious = v.blood_ml < 2500.0f;
+    }
+}
+
+void World::apply_chest_seal(BodyId id) {
+    if (!alive(id)) return;
+    bodies_[id.index].chest_sealed = true;
+}
+
+void World::apply_splint(BodyId id) {
+    if (!alive(id)) return;
+    bodies_[id.index].splinted = true;
+}
+
 void World::set_component(BodyId id, Component component, float thrust_force) {
     if (!alive(id)) return;
     Body& b = bodies_[id.index];
@@ -761,7 +813,7 @@ const Joint& World::joint(JointId id) const {
 
 ProjectileId World::spawn_projectile(Vec2 pos, Vec2 vel, float mass, float radius,
                                      float drag_k, float fragmentation_speed,
-                                     uint8_t fragments) {
+                                     uint8_t fragments, float yaw_gain_per_m) {
     uint32_t idx = 0;
     if (!projectile_free_.empty()) {
         idx = projectile_free_.back();
@@ -783,6 +835,7 @@ ProjectileId World::spawn_projectile(Vec2 pos, Vec2 vel, float mass, float radiu
     p.drag_k = drag_k;
     p.fragmentation_speed = fragmentation_speed;
     p.fragments = fragments;
+    p.yaw_gain_per_m = yaw_gain_per_m;
     p.alive = true;
     projectile_alive_[idx] = 1;
     ++projectile_count_;
@@ -851,7 +904,7 @@ bool World::apply_blade(BodyId id, Vec2 world_point, Vec2 dir, float energy_j) {
     body.asleep = false;
     body.sleep_timer = 0.0f;
     if (wounds_.size() >= 256) wounds_.erase(wounds_.begin());
-    wounds_.push_back(WoundEvent{world_point, d, energy_j, wr.worst, id.index});
+    wounds_.push_back(WoundEvent{world_point, d, energy_j, wr.worst, 0.0f, 0.0f, id.index});
 
     bool severed_joint = false;
     float structural = 0.0f;
@@ -964,7 +1017,7 @@ void World::explode(Vec2 center, float radius, float energy_j) {
             groups_[body.group].dead = true;
         }
         if (wounds_.size() >= 256) wounds_.erase(wounds_.begin());
-        wounds_.push_back(WoundEvent{body.pos, dir, energy_j, wr.worst, i});
+        wounds_.push_back(WoundEvent{body.pos, dir, energy_j, wr.worst, 0.0f, 0.0f, i});
     }
 }
 
@@ -1033,12 +1086,60 @@ void World::step_projectiles() {
         const Material& mat = material(body.material);
         const float area = kPi * p.radius * p.radius;
         const float path = std::max(best_chord, 1e-4f);
-        const float depth = energy / (mat.penetration_resistance * area);
+
+        const float yaw_area = area * (1.0f + 2.0f * std::fabs(std::sin(p.yaw_rad)));
+        float effective_energy = energy;
+        bool armour_stopped = false;
+        if (body.armour_thickness_m > 0.0f) {
+            const float work = body.armour_strength_pa * area * body.armour_thickness_m;
+            if (effective_energy <= work) {
+                armour_stopped = true;
+            } else {
+                effective_energy -= work;
+            }
+        }
+
+        const float depth = effective_energy / (mat.penetration_resistance * yaw_area);
         const float fraction = clampf(depth / path, 0.0f, 1.0f);
         const float damage = clampf(depth / 0.20f, 0.0f, 1.0f) *
                              clampf(path / 0.05f, 0.0f, 1.0f);
+        const float deposited = std::min(effective_energy,
+                                         mat.penetration_resistance * yaw_area * path);
+        const float de_dx = deposited / path;
+        (void)de_dx;
+        const float radial_v = std::sqrt(2.0f * effective_energy /
+                                         std::max(mat.density * yaw_area * path, 1e-6f));
+        const float temporary_cavity = radial_v * 1.0e-4f;
 
         float applied_damage = damage;
+        if (armour_stopped) {
+            const float blunt_factor = body.armour_soft ? 0.8f : 0.25f;
+            const Vec2 entry_local = inv_rotate(hit_point - body.pos, -body.angle);
+            const Vec2 exit_local =
+                inv_rotate(hit_point + dir * 0.02f - body.pos, -body.angle);
+            const WoundResult wr =
+                apply_local_wound(body, entry_local, exit_local, blunt_factor * 0.25f);
+            body.health = std::max(0.0f, body.health - wr.worst * 0.5f);
+            if (!body.tourniquet) {
+                body.bleed_ml_s = std::max(body.bleed_ml_s, wr.bleed);
+            }
+            if (body.group < groups_.size() && body.vital && body.health <= 0.2f) {
+                groups_[body.group].dead = true;
+            }
+            const Vec2 impulse = dir * (p.mass * impact_speed);
+            apply_impulse(body, hit_point - body.pos, impulse);
+            p.alive = false;
+            projectile_alive_[i] = 0;
+            ++p.generation;
+            projectile_free_.push_back(i);
+            --projectile_count_;
+            if (wounds_.size() >= 256) wounds_.erase(wounds_.begin());
+            wounds_.push_back(WoundEvent{hit_point, dir, energy, wr.worst * 0.5f,
+                                         temporary_cavity, p.yaw_rad * 57.2958f,
+                                         best_body});
+            continue;
+        }
+
         if (body.compartment_count > 0) {
             const Vec2 entry_local = inv_rotate(hit_point - body.pos, -body.angle);
             const Vec2 exit_local =
@@ -1046,7 +1147,8 @@ void World::step_projectiles() {
             const float energy_factor = clampf(depth / 0.20f, 0.0f, 1.0f);
 
             const WoundResult wr =
-                apply_local_wound(body, entry_local, exit_local, energy_factor);
+                apply_local_wound(body, entry_local, exit_local, energy_factor,
+                                  temporary_cavity);
             applied_damage = wr.worst;
             body.health = std::max(0.0f, 1.0f - applied_damage);
             if (!body.tourniquet) {
@@ -1075,8 +1177,13 @@ void World::step_projectiles() {
             body.sleep_timer = 0.0f;
         }
 
+        p.yaw_rad = std::min(kPi * 0.5f,
+                             p.yaw_rad + p.yaw_gain_per_m * path);
+
         if (wounds_.size() >= 256) wounds_.erase(wounds_.begin());
-        wounds_.push_back(WoundEvent{hit_point, dir, energy, damage, best_body});
+        wounds_.push_back(WoundEvent{hit_point, dir, energy, damage,
+                                     temporary_cavity, p.yaw_rad * 57.2958f,
+                                     best_body});
 
         if (p.fragmentation_speed > 0.0f && impact_speed > p.fragmentation_speed &&
             p.fragments > 0 && fragment_count + p.fragments < 64) {
@@ -1099,8 +1206,8 @@ void World::step_projectiles() {
             fractures[fracture_count++] = FractureRequest{best_body, dir, energy};
         }
 
-        const float lost = mat.penetration_resistance * area * path;
-        const float remaining = std::max(0.0f, energy - lost);
+        const float lost = mat.penetration_resistance * yaw_area * path;
+        const float remaining = std::max(0.0f, effective_energy - lost);
         if (depth > path) {
             p.vel = dir * std::sqrt(2.0f * remaining / p.mass);
             p.pos = hit_point + dir * (path + 2.0f * p.radius + 1e-3f);
@@ -1130,22 +1237,61 @@ void World::step_projectiles() {
 }
 
 void World::update_vitals() {
+    // Called every 4th tick; integrate a full 1/60 s of physiology.
+    constexpr float kPhysioDt = 4.0f * kDt;
     for (Vitals& v : groups_) v.bleed_ml_s = 0.0f;
+    float lung_damage[64]{};
+    bool sealed[64]{};
     for (uint32_t i = 0; i < bodies_.size(); ++i) {
         if (!alive_[i]) continue;
         const Body& b = bodies_[i];
-        if (b.group < groups_.size()) groups_[b.group].bleed_ml_s += b.bleed_ml_s;
+        if (b.group >= groups_.size()) continue;
+        float bleed = b.bleed_ml_s;
+        if (b.splinted) bleed *= 0.5f;
+        groups_[b.group].bleed_ml_s += bleed;
+        for (uint8_t c = 0; c < b.compartment_count; ++c) {
+            if (b.compartments[c].kind == TissueKind::Lung) {
+                lung_damage[b.group] = std::max(lung_damage[b.group],
+                                                b.compartments[c].damage);
+            }
+        }
+        sealed[b.group] = sealed[b.group] || b.chest_sealed;
     }
     for (Vitals& v : groups_) {
         if (v.dead) continue;
-        const float requested = v.bleed_ml_s * kDt;
+        const float requested = v.bleed_ml_s * kPhysioDt;
         const float loss = std::min(requested, v.blood_ml);
         v.blood_ml -= loss;
         v.emitted_ml += loss;
-        if (v.blood_ml < 900.0f) {
-            v.dead = true;
-        } else if (v.blood_ml < 2500.0f) {
+
+        if (v.infuse_ml > 0.0f) {
+            const float give = std::min(v.infuse_ml, 80.0f * kPhysioDt);
+            v.blood_ml = std::min(5200.0f, v.blood_ml + give);
+            v.infuse_ml -= give;
+        }
+
+        const uint32_t g = static_cast<uint32_t>(&v - groups_.data());
+        if (lung_damage[g] > 0.4f) {
+            const float rate = (lung_damage[g] - 0.4f) * 0.4f * (sealed[g] ? 0.5f : 1.0f);
+            v.hypoxia = std::min(1.2f, v.hypoxia + rate * kPhysioDt);
+        } else {
+            v.hypoxia = std::max(0.0f, v.hypoxia - 0.05f * kPhysioDt);
+        }
+
+        if (!v.arrested && v.blood_ml < 700.0f) {
+            v.arrested = true;
             v.unconscious = true;
+        }
+        if (v.arrested) {
+            v.arrest_s += kPhysioDt;
+            if (v.arrest_s > 180.0f) v.dead = true;
+        }
+        if (v.hypoxia >= 1.0f) v.dead = true;
+        if (!v.dead && (v.hypoxia >= 0.6f || v.blood_ml < 2500.0f)) {
+            v.unconscious = true;
+        }
+        if (!v.dead && !v.arrested && v.hypoxia < 0.6f && v.blood_ml >= 2500.0f) {
+            v.unconscious = false;
         }
     }
 }
@@ -1168,6 +1314,26 @@ void World::step(const InputFrame& in) {
             b.force += rotate(Vec2{b.thrust_force, 0.0f}, b.angle);
             b.asleep = false;
             b.sleep_timer = 0.0f;
+        }
+        if (b.component != Component::Battery && b.signal_in &&
+            b.group < groups_.size()) {
+            b.shock_s += kDt;
+            for (uint8_t c = 0; c < b.compartment_count; ++c) {
+                if (b.compartments[c].kind == TissueKind::Muscle) {
+                    b.compartments[c].damage =
+                        std::min(1.0f, b.compartments[c].damage + 0.5f * kDt);
+                }
+            }
+            b.health = std::max(0.0f, b.health - 0.2f * kDt);
+            if (b.shock_s > 0.2f) {
+                Vitals& v = groups_[b.group];
+                if (!v.dead) {
+                    v.arrested = true;
+                    v.unconscious = true;
+                }
+            }
+        } else if (b.component != Component::Battery) {
+            b.shock_s = 0.0f;
         }
     }
 
@@ -1635,6 +1801,13 @@ uint64_t World::state_hash() const {
         h.f32(b.temperature_c);
         h.boolean(b.ignited);
         h.f32(b.fuel_s);
+        h.f32(b.voltage);
+        h.f32(b.shock_s);
+        h.boolean(b.chest_sealed);
+        h.boolean(b.splinted);
+        h.f32(b.armour_thickness_m);
+        h.f32(b.armour_strength_pa);
+        h.boolean(b.armour_soft);
         h.u8(static_cast<uint8_t>(b.component));
         h.boolean(b.signal);
         h.boolean(b.signal_in);
@@ -1665,6 +1838,10 @@ uint64_t World::state_hash() const {
     for (const Vitals& v : groups_) {
         h.f32(v.blood_ml);
         h.f32(v.emitted_ml);
+        h.f32(v.infuse_ml);
+        h.f32(v.hypoxia);
+        h.f32(v.arrest_s);
+        h.boolean(v.arrested);
         h.boolean(v.unconscious);
         h.boolean(v.dead);
     }

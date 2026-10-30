@@ -9,10 +9,13 @@
 
 #include "render/gl_api.h"
 #include "sim/alloc.h"
+#include "app/audio.h"
 #include "render/renderer.h"
 #include "sim/ragdoll.h"
 #include "sim/rope.h"
 #include "sim/ammo.h"
+#include "sim/cloth.h"
+#include "sim/weapon.h"
 #include "sim/world.h"
 
 using namespace sim;
@@ -88,6 +91,9 @@ int main(int, char**) {
     }
     std::printf("GL_VERSION: %s\n", reinterpret_cast<const char*>(glapi::GetString(0x1F02)));
     std::printf("GL_RENDERER: %s\n", reinterpret_cast<const char*>(glapi::GetString(0x1F01)));
+
+    app::Audio audio;
+    audio.init();
 
     render::Renderer renderer;
     if (!renderer.init()) {
@@ -277,10 +283,52 @@ int main(int, char**) {
                     case SDLK_1: ammo_index = 0; break;
                     case SDLK_2: ammo_index = 1; break;
                     case SDLK_3: ammo_index = 2; break;
+                    case SDLK_4: {
+                        const BodyId hit = world.pick(mouse_world);
+                        if (hit.valid()) world.apply_iv(hit, 500.0f);
+                        break;
+                    }
+                    case SDLK_5: {
+                        const BodyId hit = world.pick(mouse_world);
+                        if (hit.valid()) world.apply_blood_bag(hit);
+                        break;
+                    }
+                    case SDLK_6: {
+                        const BodyId hit = world.pick(mouse_world);
+                        if (hit.valid()) world.defibrillate(hit);
+                        break;
+                    }
+                    case SDLK_7: {
+                        const BodyId hit = world.pick(mouse_world);
+                        if (hit.valid()) world.apply_chest_seal(hit);
+                        break;
+                    }
+                    case SDLK_8: {
+                        const BodyId hit = world.pick(mouse_world);
+                        if (hit.valid()) world.apply_splint(hit);
+                        break;
+                    }
+                    case SDLK_9: {
+                        const BodyId hit = world.pick(mouse_world);
+                        if (hit.valid()) world.set_armour(hit, 0.06f, 2.0e8f, true);
+                        break;
+                    }
+                    case SDLK_0: {
+                        const BodyId hit = world.pick(mouse_world);
+                        if (hit.valid()) world.set_armour(hit, 0.08f, 1.0e9f, false);
+                        break;
+                    }
                     case SDLK_f: {
                         const Vec2 start = mouse_world - Vec2{12.0f, 0.0f};
                         const Vec2 dir = normalize(mouse_world - start);
-                        spawn_ammo(world, ammo_index, start, dir);
+                        WeaponSpec weapon;
+                        weapon.ammo_index = ammo_index;
+                        weapon.barrel_mm = default_barrel_mm(ammo_index);
+                        weapon.zero_m = 100.0f;
+                        fire_weapon(world, weapon, start, dir);
+                        audio.gunshot(mouse_world, cam.center,
+                                      muzzle_velocity(ammo_spec(ammo_index),
+                                                      weapon.barrel_mm));
                         break;
                     }
                     case SDLK_o: spawn_rope(world, mouse_world, 10, 0.22f, 0.045f, 0.0f); break;
@@ -292,6 +340,14 @@ int main(int, char**) {
                     case SDLK_v: tool = tool == Tool::Blade ? Tool::None : Tool::Blade; break;
                     case SDLK_m: tool = tool == Tool::Motor ? Tool::None : Tool::Motor;
                                  weld_first = BodyId{}; break;
+                    case SDLK_l: spawn_cloth(world, mouse_world, 6, 4, 0.12f, 0.03f); break;
+                    case SDLK_SEMICOLON: spawn_soft_blob(world, mouse_world, 8, 0.35f); break;
+                    case SDLK_p: {
+                        const BodyId battery = world.add_static_box(mouse_world,
+                                                                    Vec2{0.10f, 0.07f});
+                        world.set_battery(battery, 220.0f);
+                        break;
+                    }
                     case SDLK_n: {
                         const BodyId button = world.add_static_box(mouse_world,
                                                                    Vec2{0.12f, 0.08f});
@@ -482,6 +538,9 @@ int main(int, char**) {
                     const WoundEvent& we = ws[wi];
                     if (we.damage <= 0.0f) continue;
                     const BodyId wb = world.id_at(we.body);
+                    if (wb.valid()) {
+                        audio.impact(world.get(wb).material, we.energy);
+                    }
                     if (!wb.valid() || world.get(wb).vascularity <= 0.0f) continue;
                     const int n = 6 + static_cast<int>(we.damage * 14.0f);
                     for (int k = 0; k < n; ++k) {
@@ -650,10 +709,11 @@ int main(int, char**) {
 
             renderer.text(sim::Vec2{tl.x, tl.y - 0.84f}, 0.03f,
                           render::Color{0.55f, 0.58f, 0.65f, 1.0f},
-                          "LMB GRAB/TOOL  RMB CIRCLE  F FIRE  1-3 AMMO  H RAGDOLL  O ROPE");
+                          "LMB GRAB  F FIRE  1-3 AMMO  4-8 TREAT  9/0 ARMOUR  H RAG  L CLOTH  P BATTERY");
         }
         renderer.end();
         SDL_GL_SwapWindow(window);
+        audio.update();
 
         ++frame;
         if (frame % 120 == 0) {
@@ -674,6 +734,7 @@ int main(int, char**) {
         }
     }
 
+    audio.shutdown();
     renderer.shutdown();
     SDL_GL_DeleteContext(ctx);
     SDL_DestroyWindow(window);

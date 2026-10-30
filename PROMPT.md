@@ -45,7 +45,7 @@ A player on Windows or Linux:
 7. Ignites wood, watches fire spread to a neighbouring wooden body but not to steel, and watches burns damage tissue.
 8. Wires a button to a thruster, toggles the button, and watches the thruster accelerate the body.
 9. Saves the scene, reloads it, and gets the same state hash; records 10+ seconds of input, replays it, and reads `replay OK`.
-10. Runs `ctest` on Windows and Linux with **37/37 cases passing**, and the benchmark reports **p99 < 8 ms** for 1,500 bodies with **zero heap allocations during `step()`**.
+10. Runs `ctest` on Windows and Linux with **48/48 cases passing**, and the benchmark reports **p99 < 8 ms** for 1,500 bodies with **zero heap allocations during `step()`**.
 11. Downloads the CI artifact `pp-windows-x64`, unpacks it, and runs `pp.exe` with no missing DLLs.
 
 ---
@@ -122,7 +122,7 @@ Deliverable commands must be documented in `README.md` for both platforms.
 /src/render/             instanced 2D renderer, GL loader, 3x5 bitmap font
 /src/app/                loop, camera, tools, HUD, save/replay
 /src/platform/           SDL include shim; platform glue only
-/tests/                  headless numeric suite (37 cases)
+/tests/                  headless numeric suite (48 cases)
 /tools/                  bench, scene builders
 ```
 
@@ -266,7 +266,7 @@ Copy semantics are value types; serialization writes little-endian fields explic
 - Vital death when a vital body’s health ≤ 0.2; a head hit that destroys the brain must kill within one update.
 - Systemic: unconscious below 2,500 ml, dead below 900 ml. `blood + emitted` must equal 5,200 within 0.5 ml.
 - Tourniquet: zeroes a body’s bleed and blocks new bleeding from that body; it does not heal.
-- Treatment items other than the tourniquet are stretch items; if absent, absent from the UI.
+- Treatment items: tourniquet, IV fluids, blood bag, defibrillator, chest seal, splint. A transfusion plus defibrillation must reverse hemorrhagic arrest; a splint halves limb bleeding; a chest seal halves hypoxia from lung damage.
 
 ---
 
@@ -302,7 +302,7 @@ Copy semantics are value types; serialization writes little-endian fields explic
 - **Fragments:** above the class threshold spawn up to four sub-projectiles at fixed angular offsets (±0.22, ±0.38 rad), 55% of impact speed, equal mass. Queue spawns and append after the iteration.
 - **Impulse:** `m·Δv·fraction` along the path, applied at the hit point (angular effects included).
 - **Calibration:** 9 mm at 350 m/s must penetrate 0.64 m of flesh-resistance material (12 MPa) within ±15%; a 0.6 m block is perforated, 0.7 m is not; steel (800 MPa) stops it.
-- **Stretch (not v1 gate):** interior pressure curves, twist/yaw in flight, temporary cavity, armour backface, sight zeroing, supersonic crack audio.
+- **Also required:** barrel-length muzzle-velocity curve, sight zeroing at a configured range, yaw growth in tissue with a temporary-cavity radius derived from deposited energy, armour that converts a stopped round into blunt trauma, and a distance-delayed supersonic crack (audio).
 
 ---
 
@@ -385,7 +385,7 @@ Controls (documented in README):
 
 ## 18. Testing and acceptance matrix
 
-Headless, deterministic, CI-gated; the suite must contain at least the 37 behaviours below (grouped). Tolerances are part of the contract.
+Headless, deterministic, CI-gated; the suite must contain at least the 48 behaviours below (grouped). Tolerances are part of the contract.
 
 **Core physics (9):** free-fall displacement; circle at rest on a floor; five-box stack; six-box tower for 30 s at a non-zero x (clipping-plane regression); momentum conservation without damping; determinism across two worlds (3,000 ticks); zero allocations in `step()` after warm-up; stale handles rejected; picking returns the topmost body.
 
@@ -395,9 +395,9 @@ Headless, deterministic, CI-gated; the suite must contain at least the 37 behavi
 
 **Ragdoll and rope (3):** ragdoll collapses and stays assembled (anchor gaps < 5 cm); rope holds a load; rope breaks above rated tension.
 
-**Ballistics (6):** gravity/drag; steel stops vs flesh perforates; penetration depth ±15% (0.6 m passes, 0.7 m stops); headshot kills and a thigh shot bleeds without immediate death; ammunition ordering; 5.56 fragments vs 9 mm does not.
+**Ballistics (10):** gravity/drag; steel stops vs flesh perforates; penetration depth ±15% (0.6 m passes, 0.7 m stops); headshot kills and a thigh shot bleeds without immediate death; ammunition ordering; 5.56 fragments vs 9 mm does not; muzzle velocity rises with barrel length and saturates; zeroing raises the bore with range; 5.56 yaws and cavitates more than 9 mm; armour stops rounds and yields blunt trauma.
 
-**Trauma and blood (4):** severed artery bleeds ≥5 ml/s vs muscle-only <2; tourniquet stabilizes blood; repeated blade strokes sever a limb at a joint; `blood + emitted == 5200` within 0.5 ml.
+**Trauma and treatments (7):** severed artery bleeds ≥5 ml/s vs muscle-only <2; tourniquet stabilizes blood; repeated blade strokes sever a limb at a joint; `blood + emitted == 5200` within 0.5 ml; transfusion + defibrillation reverse hemorrhagic arrest, untreated arrest becomes brain death; chest seal halves hypoxia; splint halves limb bleeding and IV restores volume.
 
 **Materials (1):** glass yields exactly 4 shards (body count +3), steel unchanged.
 
@@ -407,11 +407,15 @@ Headless, deterministic, CI-gated; the suite must contain at least the 37 behavi
 
 **Wiring (1):** unwired thruster idle, wired button accelerates it, stop removes acceleration, scene round-trip preserves the wire and hash.
 
+**Electricity (1):** a wired 220 V battery fibrillates a humanoid; an unwired battery does not.
+
+**Soft bodies (2):** cloth drapes from its pinned row and stays jointed under gravity; a soft blob deforms under a hit without losing constraints.
+
+**Audio (1):** impact timbre ordering by material and distance-delayed crack maths are deterministic and sane.
+
 **Persistence and replay (2):** scene round-trip deterministic over 240 ticks (corrupt/truncated blobs rejected); 600-frame replay bit-identical.
 
 **Robustness (1):** a 900 m/s projectile still registers a hit on a 1 mm plate (no tunneling); no NaN/inf after any test.
-
-The reference suite contains exactly 37 cases.
 
 Commands:
 
@@ -445,7 +449,10 @@ Reference measurements (llvmpipe, 4 cores): 1,500 bodies ≈ 1.2–1.5 ms avg, p
 | M3 | projectiles, ammo classes, penetration, fragmentation, steel/flesh, fracture | penetration ±15%; 5.56 fragments; glass shards |
 | M4 | blade severance, explosions, heat/fire, blood/flame feedback | severance test; blast test; fire tests |
 | M5 | wiring/motors/thrusters, scene save/load, replay recorder | wiring test; round-trip hashes; `replay OK` |
-| M6 | packaging, README, Windows artifact, bench, polish | `pp-windows-x64` runs with bundled DLLs; p99 < 8 ms; 37/37 on both OSes |
+| M6 | packaging, README, Windows artifact, bench, polish | `pp-windows-x64` runs with bundled DLLs; p99 < 8 ms; CI green on both OSes |
+| M7 | ballistics depth (interior curve, yaw/cavity, armour, zeroing) and treatment items | four ballistics tests and three treatment tests green |
+| M8 | electricity, procedural audio, cloth and soft blobs | fibrillation, timbre, cloth and blob tests green |
+| M9 | final integration, docs, cross-platform artifact | 48/48 on Windows and Linux; prompt/docs match the shipped feature set |
 
 Do not start a milestone early. Do not leave one half-done.
 
@@ -482,7 +489,7 @@ Also rejected: per-frame allocation, `std::function` in the tick, physics tuned 
 
 **Stop and report only if:** a gate is unreachable for a structural reason you cannot resolve; a required constant has no source and no calibration target; two requirements are provably contradictory. Otherwise decide, document, continue.
 
-**Out of scope for v1 (must be listed as such in README):** electricity simulation; continuous FEM/mass-spring fracture; cloth and soft bodies; node-graph rigid assembly; audio; networking; mod support. Adding any of these is a new milestone with its own tests.
+**Out of scope for v1 (must be listed as such in README):** continuous FEM fracture (the shipped model is plastic hinges plus quad shards); networking; mod support; an engine or scripting layer. Mass-spring cloth/soft blobs, electricity, and procedural audio are in scope as of M7–M9. Adding any out-of-scope item is a new milestone with its own tests.
 
 ---
 
@@ -498,4 +505,4 @@ Do not ask for permission, library preferences, or content targets. Build, measu
 
 ## Appendix A — Reference implementation (non-normative)
 
-A working implementation of this prompt exists at <https://github.com/DudeChill/pp-sandbox> (C++20, SDL2, OpenGL 3.3, MSVC/vcpkg + Linux, 37 tests, Windows artifact in CI). Treat it as one acceptable implementation, not a constraint: any implementation that satisfies the gates above is valid. Its `STATE.md`, `docs/DECISIONS.md`, and `docs/PHYSICS.md` show the expected level of provenance.
+A working implementation of this prompt exists at <https://github.com/DudeChill/pp-sandbox> (C++20, SDL2, OpenGL 3.3, MSVC/vcpkg + Linux, 48 tests, Windows artifact in CI). Treat it as one acceptable implementation, not a constraint: any implementation that satisfies the gates above is valid. Its `STATE.md`, `docs/DECISIONS.md`, and `docs/PHYSICS.md` show the expected level of provenance.

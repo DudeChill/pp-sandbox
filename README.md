@@ -3,52 +3,39 @@
 ![build](https://github.com/DudeChill/pp-sandbox/actions/workflows/build.yml/badge.svg)
 
 A 2D ragdoll physics sandbox in the lineage of *People Playground*, built around a
-deterministic simulation core. The long-term goal is simulation-grade trauma,
-ballistics, and material behaviour: every visible wound or fracture must be
-explainable by the state of the model. See `PROMPT.md` for the full specification.
+deterministic simulation core. Every visible wound, fracture, fire, and signal is a
+readout of state; nothing is scripted. `PROMPT.md` is the complete implementation
+specification.
 
-## Status
+## Status — M0–M9 complete
 
-Milestones **M0** (engine core) and **M1** (joints, ragdoll, materials,
-construction) are complete:
-
-- deterministic fixed-step rigid-body simulation with warm-started contacts
-  and a position-projection pass;
-- distance, revolute, and weld joints with limits, break thresholds, and
-  plastic hinges driven by material section strength;
-- 13-part ragdoll, breakable rope, weld/cut tools;
-- material table (steel, aluminium, wood, glass, concrete, rubber, bone,
-  flesh) and per-body material assignment;
-- instanced 2D renderer, camera, grab/spawn/delete tools;
-- 18 headless tests covering physics, joints, materials, determinism,
-  allocation, and performance.
-
-Scene save/load (`F5`/`F9`) and input replay (`F6`/`F7`) round-trip
-deterministically; replay reports `OK` or `DIVERGED` from the stored hash.
-Fire ignites flammable bodies (`I`), spreads to neighbours, burns tissue, and
-can kill. Wiring: buttons drive thrusters through explicitly drawn wires; signals are
-evaluated before forces each tick. Glass shatters into four shards above its fracture energy; steel absorbs the
-same round. A 3x5 bitmap HUD
-shows tool, ammunition, body/wound counts, and blood.
-
-A first **trauma/ballistics slice** (M2/M3) is in: seven ammunition classes
-(9×19, 5.56, 7.62, 12 ga slug/buck, arrow, crossbow) with
-gravity, drag, continuous collision, material-dependent penetration,
-deterministic 5.56-style fragmentation, compartment-based wound damage,
-per-body bleeding into a shared blood volume,
-unconsciousness/death thresholds, a tourniquet treatment, a per-ragdoll blood
-bar, and blood particle feedback. This is a
-lumped model, not yet the per-compartment anatomy of the specification.
-
-M4–M6 (full anatomy/physiology, melee/gore detail, wiring/save-replay,
-secondary systems, content) are not implemented yet. See `STATE.md`.
+- **Physics:** fixed 240 Hz, warm-started sequential-impulse solver, position
+  projection, CCD, sleeping, distance/revolute/weld joints with limits, motors,
+  plastic hinges, breakable ropes.
+- **Humanoid:** 13-part ragdoll, tissue compartments (brain/heart/lungs/gut/
+  muscle/bone/artery), arterial hemorrhage, blood budget with conservation,
+  shock, arrest, death, tourniquet/IV/blood/defibrillator/chest seal/splint.
+- **Ballistics:** seven ammunition classes, gravity and quadratic drag, CCD,
+  material-dependent penetration, barrel-length muzzle velocity, zeroing, yaw,
+  temporary cavity, deterministic fragmentation, armour with blunt trauma.
+- **Materials:** density/modulus/strength/penetration resistance/fracture/ignition
+  tables; glass shatters into shards; wood burns and spreads fire.
+- **Sandbox:** weld/cut, ropes, cloth, soft blobs, motors, buttons, thrusters,
+  wires, batteries (220 V shocks), 8 kJ explosions, blades with severance.
+- **Persistence:** versioned binary scene save/load; input replay checked by
+  state hash (`OK`/`DIVERGED`).
+- **Presentation:** instanced OpenGL renderer, blood particles, flames, HUD with
+  a built-in 3×5 font, procedural impact/gunshot audio with a distance-delayed
+  supersonic crack.
+- **Platforms:** Windows 10/11 x64 (MSVC + vcpkg) and Linux; shared CMake and
+  GitHub Actions CI. Windows artifact bundles `SDL2.dll` and the VC++ runtime.
 
 ## Build
 
 ### Windows 10/11 (x64)
 
-Requirements: Visual Studio 2022 Build Tools (Desktop development with C++),
-CMake 3.25+, and [vcpkg](https://github.com/microsoft/vcpkg) with SDL2.
+Requirements: Visual Studio 2022 Build Tools (Desktop C++), CMake 3.25+, and
+[vcpkg](https://github.com/microsoft/vcpkg) with SDL2.
 
 ```bat
 vcpkg install sdl2 --triplet x64-windows
@@ -59,16 +46,10 @@ ctest --test-dir build -C Release --output-on-failure
 build\Release\pp.exe
 ```
 
-The build links SDL2 dynamically and vcpkg copies `SDL2.dll` next to the
-executable. If it is missing, copy `SDL2.dll` from
-`%VCPKG_ROOT%\installed\x64-windows\bin`. The simulation and tests build
-without SDL using `-DPP_BUILD_APP=OFF`.
-
-Prebuilt Windows x64 binaries (exe, SDL2, VC++ runtime) are published as the
-`pp-windows-x64` artifact on each green CI run:
+vcpkg copies `SDL2.dll` next to the executable. The simulation and tests build
+without SDL using `-DPP_BUILD_APP=OFF`. Prebuilt bundles are the
+`pp-windows-x64` artifact on green CI runs:
 <https://github.com/DudeChill/pp-sandbox/actions/workflows/build.yml>.
-The executable uses the console subsystem, so a terminal window stays open
-behind the game window (useful for logs).
 
 ### Linux
 
@@ -80,66 +61,53 @@ ctest --test-dir build/release --output-on-failure
 ./build/release/pp                  # needs an X display, e.g. DISPLAY=:98
 ```
 
-Debug preset enables ASan/UBSan:
-
-```sh
-cmake --preset debug && cmake --build build/debug -j2
-```
-
-The build deliberately uses `-j2` and `-ffp-contract=off`; do not add
-`-ffast-math` or `-march=native`, both break reproducibility.
-
 ## Controls
 
 | Input | Action |
 |---|---|
 | Left drag | Grab a body with a spring |
 | Right click | Spawn a circle |
-| `B` | Spawn a box at the cursor |
-| `H` | Spawn a ragdoll with its feet at the cursor |
-| `O` | Spawn a hanging rope at the cursor |
-| `G` | Weld tool: click two bodies to weld them |
-| `C` | Cut tool: click near a joint to remove it |
-| `1` / `2` / `3` | Select 9×19, 5.56, or 7.62 ammunition |
-| `F` | Fire the selected round from the left of the cursor toward it |
-| `E` | Detonate an 8 kJ charge at the cursor |
-| `K` | Spawn a glass pane at the cursor |
-| `I` | Ignite the body under the cursor |
-| `N` | Spawn a button; click it to toggle its signal |
-| `Y` | Spawn a thruster (fires along its +X axis when powered) |
-| `Z` | Wire tool: click an output then an input |
-| `T` | Tourniquet tool: click a limb to stop its bleeding |
-| `V` | Blade tool: slash the body under the cursor (cuts tissue, severs limbs) |
+| `B` / `K` | Spawn a box / glass pane |
+| `H` / `O` | Spawn a ragdoll / hanging rope |
+| `L` / `;` | Spawn cloth / soft blob |
+| `N` / `Y` / `P` | Spawn button / thruster / 220 V battery |
+| `G` / `C` / `Z` | Weld / cut / wire tool (click two bodies) |
+| `T` / `V` | Tourniquet / blade tool |
+| `1` / `2` / `3` | Select 9×19, 5.56, or 7.62 |
+| `4` / `5` / `6` / `7` / `8` | IV / blood bag / defibrillator / chest seal / splint |
+| `9` / `0` | Issue a soft vest / steel plate to the body under the cursor |
+| `F` | Fire the selected round toward the cursor |
+| `I` / `E` | Ignite the body under the cursor / 8 kJ explosion at cursor |
 | `X` | Delete the body under the cursor |
 | Mouse wheel | Zoom |
-| `Space` | Pause/unpause |
-| `R` | Reset the demo scene |
+| `Space` / `R` | Pause / reset scene |
 | `F5` / `F9` | Save / load `scene.ppb` |
 | `F6` / `F7` | Record / replay `replay.ppr` (hash-verified) |
 | `Esc` | Quit |
 
-## Layout
-
-```
-src/sim/     deterministic simulation core (no window/render/audio deps)
-src/render/  instanced 2D renderer, GL loader
-src/app/     main loop, tools, camera
-tests/       headless numeric tests
-scripts/     dependency setup
-docs/        decisions and physics provenance
-```
-
-## Bench
+## Verification
 
 ```sh
+ctest --test-dir build/release --output-on-failure
+./build/release/pp_tests        # 48 cases
 cmake --build build/release -j2 --target pp_bench && ./build/release/pp_bench
 ```
 
-1,500 stacked boxes: ~1.45 ms average, 2.19 ms p99 on this host.
+The suite covers rigid-body physics, determinism, zero-allocation stepping,
+joints and plastic hinges, ragdolls, ropes, cloth and soft bodies, penetration
+calibration, fragmentation, yaw/cavity, armour, treatments and arrest,
+electricity, fire, wiring, explosions, audio mapping, persistence, replay, and
+CCD robustness. Benchmark: 1,500 bodies at ~1 ms average, p99 < 2.3 ms
+(llvmpipe host; budget 8 ms).
 
-## Verification
+## Layout
 
-`pp_tests` covers gravity, resting contact, stack stability at non-zero
-coordinates, momentum conservation, determinism across runs, zero allocation
-during `step()`, stale-handle rejection, picking, and the 60 fps budget for
-500 bodies. The suite exits non-zero on any failure.
+```
+src/sim/     deterministic core (no SDL/render/audio)
+src/render/  instanced renderer, GL loader, bitmap font
+src/app/     loop, camera, tools, HUD, audio, save/replay
+src/platform SDL include shim
+tests/       headless numeric suite
+tools/       bench, scene builders
+docs/        DECISIONS.md, PHYSICS.md
+```

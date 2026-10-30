@@ -139,3 +139,49 @@ cool toward 20 C at 0.4/s.
 - Material table with density, modulus, strengths, toughness (prompt §13).
 - Energy audit for restitution and friction losses.
 - Seed-stable island ordering under multithreading.
+
+## Ballistics depth (M7)
+
+- Interior: `v(L) = v_ref * sqrt(1 - e^(-(L+20)/k)) / sqrt(1 - e^(-(L_ref+20)/k))`,
+  `k = max(L_ref/2, 20)` mm. Reference barrels: 120 mm (9×19), 508 mm
+  (5.56/7.62), 500 mm (shotgun), 350/400 mm (arrow/crossbow).
+- Zeroing: `t = zero/v`, `drop = ½gt²`, elevation `atan((drop + sight)/zero)`.
+- Yaw gain inside tissue (rad/m): 9×19 0.8; 5.56 6.0; 7.62 1.5; slug 0.6;
+  buckshot 1.2; arrows 0. Yaw caps at 90°; presented area grows by
+  `1 + 2|sin(yaw)|`.
+- Temporary cavity: `u = sqrt(2E/(ρ·A_eff·path))`, radius `u·10⁻⁴` m; extra
+  Lung/Liver damage `clamp(r/0.15,0,1)·0.3`.
+- Armour: penetration work `σ_armour·A·thickness`. Below it the round stops and
+  the wound is blunt (`0.8` soft vest, `0.25` plate scaling). Above it, the work
+  is subtracted from the projectile energy. Reference: 60 mm vest (200 MPa)
+  stops 9 mm; 80 mm plate (1 GPa) stops 7.62.
+
+## Physiology timing (M7)
+
+- Physiology integrates at 60 Hz (one call per four 240 Hz ticks, using
+  `dt = 1/60`).
+- Infusion 80 ml/s, capped at 5,200 ml. Splint halves a body’s bleed.
+- Arrest when blood < 700 ml; brain death after 180 s of arrest; hypoxia ≥ 0.6
+  unconscious, ≥ 1.0 dead. Lung damage > 0.4 raises hypoxia at
+  `(damage-0.4)·0.4/s`; a chest seal halves it. Defibrillation clears arrest
+  only if blood ≥ 1,200 ml.
+
+## Electricity (M8)
+
+A battery body holds `voltage` and energises its wires. Any group body receiving
+the signal accumulates `shock_s`; after 0.2 s the group arrests. Tissue damage
+0.5/s (muscle) and health 0.2/s while energised. 220 V is the reference source.
+
+## Procedural audio (M8)
+
+Impact tone by material (Hz): glass 3200, steel 2600, aluminium 1800, bone 900,
+wood 520, concrete 260, flesh 220, rubber 150. Delay = distance/343 s; bang
+duration `clamp(0.08 + E/40000, 0.08, 0.6)` s; a supersonic round adds a
+4.2 kHz, 30 ms crack at the same delay.
+
+## Cloth and soft bodies (M8)
+
+Cloth: `cols×rows` circles (ρ 250 kg/m³, r 3 cm) with structural distance joints
+(break 5 kN); the top row is pinned by zero-length joints to static anchors.
+Rows spawn compressed to 35% so the sheet drapes. Soft blob: ring of 8 circles
+(ρ 300) braced to a core (ρ 200); joint break force 6 kN in tests.

@@ -11,7 +11,7 @@
 namespace sim {
 
 enum class Shape : uint8_t { Circle = 0, Box = 1 };
-enum class Component : uint8_t { None = 0, Button, Thruster };
+enum class Component : uint8_t { None = 0, Button, Thruster, Battery };
 
 enum class TissueKind : uint8_t {
     Skin = 0, Fat, Muscle, Bone, Artery, Vein, Nerve,
@@ -37,6 +37,8 @@ struct Projectile {
     float radius = 0.0045f;
     float drag_k = 0.0f;   // 0.5 * rho * Cd * A / m
     float fragmentation_speed = 0.0f;
+    float yaw_rad = 0.0f;
+    float yaw_gain_per_m = 0.0f;
     uint8_t fragments = 0;
     uint32_t generation = 0;
     bool alive = true;
@@ -46,7 +48,11 @@ struct Vitals {
     float blood_ml = 5200.0f;
     float emitted_ml = 0.0f;
     float bleed_ml_s = 0.0f;
+    float infuse_ml = 0.0f;      // queued IV/transfusion volume
+    float hypoxia = 0.0f;        // 0..1+; ≥0.6 unconscious, ≥1.0 dead
+    float arrest_s = 0.0f;       // time in cardiac arrest
     bool unconscious = false;
+    bool arrested = false;
     bool dead = false;
 };
 
@@ -55,6 +61,8 @@ struct WoundEvent {
     Vec2 dir{};
     float energy = 0.0f;
     float damage = 0.0f;
+    float temporary_cavity_m = 0.0f;
+    float yaw_deg = 0.0f;
     uint32_t body = 0;
 };
 
@@ -92,6 +100,13 @@ struct Body {
     bool signal = false;
     bool signal_in = false;
     float thrust_force = 2500.0f;
+    float voltage = 0.0f;
+    float shock_s = 0.0f;
+    float armour_thickness_m = 0.0f;
+    float armour_strength_pa = 0.0f;
+    bool armour_soft = false;
+    bool chest_sealed = false;
+    bool splinted = false;
 
     float temperature_c = 20.0f;
     bool ignited = false;
@@ -189,6 +204,13 @@ public:
     [[nodiscard]] bool is_burning(BodyId id) const;
     [[nodiscard]] int burning_count() const;
     void set_component(BodyId id, Component component, float thrust_force = 2500.0f);
+    void set_battery(BodyId id, float volts);
+    void set_armour(BodyId id, float thickness_m, float strength_pa, bool soft);
+    void apply_iv(BodyId id, float ml);
+    void apply_blood_bag(BodyId id);
+    void defibrillate(BodyId id);
+    void apply_chest_seal(BodyId id);
+    void apply_splint(BodyId id);
     void set_button(BodyId id, bool on);
     void add_wire(BodyId from, BodyId to);
     [[nodiscard]] const std::vector<struct Wire>& wires() const;
@@ -246,7 +268,7 @@ public:
 
     ProjectileId spawn_projectile(Vec2 pos, Vec2 vel, float mass, float radius,
                                   float drag_k, float fragmentation_speed = 0.0f,
-                                  uint8_t fragments = 0);
+                                  uint8_t fragments = 0, float yaw_gain_per_m = 0.0f);
     void remove_projectile(ProjectileId id);
     [[nodiscard]] bool projectile_alive(ProjectileId id) const;
     [[nodiscard]] Projectile& projectile(ProjectileId id);

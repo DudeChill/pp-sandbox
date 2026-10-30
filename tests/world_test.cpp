@@ -4,6 +4,9 @@
 #include "framework.h"
 #include "sim/alloc.h"
 #include "sim/ammo.h"
+#include "sim/cloth.h"
+#include "sim/sound_model.h"
+#include "sim/weapon.h"
 #include "sim/ragdoll.h"
 #include "sim/rope.h"
 #include "sim/world.h"
@@ -684,4 +687,194 @@ TEST_CASE("a 900 m/s projectile cannot tunnel through a 1 mm plate") {
     for (int i = 0; i < 10; ++i) w.step(in);
     CHECK(w.wounds().size() == 1);
     (void)p;
+}
+
+TEST_CASE("muzzle velocity rises with barrel length and saturates") {
+    const AmmoSpec& nine = ammo_spec(0);
+    const float v_ref = muzzle_velocity(nine, nine.reference_barrel_mm);
+    CHECK_NEAR(v_ref, nine.muzzle_speed, 0.5f);
+    const float v200 = muzzle_velocity(nine, 200.0f);
+    const float v500 = muzzle_velocity(nine, 500.0f);
+    const float v1500 = muzzle_velocity(nine, 1500.0f);
+    CHECK(v500 > v200);
+    CHECK(v1500 > v500);
+    CHECK(v1500 - v500 < v500 - v200);
+}
+
+TEST_CASE("zeroing raises the bore and increases with range") {
+    const AmmoSpec& nine = ammo_spec(0);
+    const float speed = muzzle_velocity(nine, nine.reference_barrel_mm);
+    const Vec2 flat = launch_direction(Vec2{1.0f, 0.0f}, speed, 0.0f, 0.0f);
+    const Vec2 at50 = launch_direction(Vec2{1.0f, 0.0f}, speed, 50.0f, 0.0f);
+    const Vec2 at200 = launch_direction(Vec2{1.0f, 0.0f}, speed, 200.0f, 0.0f);
+    CHECK_NEAR(flat.y, 0.0f, 1e-6f);
+    CHECK(at50.y > 0.0f);
+    CHECK(at200.y > at50.y);
+    CHECK_NEAR(length(at200), 1.0f, 1e-4f);
+}
+
+TEST_CASE("5.56 yaws and cavitates more than 9 mm in a thick block") {
+    auto first_wound = [](int ammo) {
+        World w;
+        const BodyId block = w.add_static_box(Vec2{0.0f, 0.0f}, Vec2{0.20f, 0.30f});
+        w.set_material(block, MaterialId::Flesh);
+        spawn_ammo(w, ammo, Vec2{-2.0f, 0.0f}, Vec2{1.0f, 0.0f});
+        InputFrame in;
+        for (int i = 0; i < 12; ++i) w.step(in);
+        CHECK(!w.wounds().empty());
+        return w.wounds().front();
+    };
+    const WoundEvent nine = first_wound(0);
+    const WoundEvent rifle = first_wound(1);
+    CHECK(rifle.yaw_deg > nine.yaw_deg + 20.0f);
+    CHECK(rifle.temporary_cavity_m > nine.temporary_cavity_m);
+}
+
+TEST_CASE("armour stops rounds and converts the rest into blunt trauma") {
+    auto fire = [](bool armoured, bool plate, int ammo) {
+        World w;
+        const BodyId block = w.add_static_box(Vec2{0.0f, 0.0f}, Vec2{0.10f, 0.30f});
+        w.set_material(block, MaterialId::Flesh);
+        if (armoured) {
+            w.set_armour(block, plate ? 0.08f : 0.06f, plate ? 1.0e9f : 2.0e8f, !plate);
+        }
+        const ProjectileId p = spawn_ammo(w, ammo, Vec2{-2.0f, 0.0f}, Vec2{1.0f, 0.0f});
+        InputFrame in;
+        for (int i = 0; i < 40; ++i) w.step(in);
+        return std::pair<bool, float>(w.projectile_alive(p),
+                                      w.wounds().empty() ? 0.0f : w.wounds().front().damage);
+    };
+
+    const auto bare = fire(false, false, 0);
+    CHECK(bare.first);                       // 9 mm passes through unarmoured flesh
+
+    const auto vest = fire(true, false, 0);
+    CHECK(!vest.first);                      // fabric stops 9 mm
+    CHECK(vest.second < 0.5f);               // and the wound is blunt, not a channel
+
+    const auto plate = fire(true, true, 2);  // 7.62 vs steel plate
+    CHECK(!plate.first);
+}
+
+TEST_CASE("transfusion and defibrillation reverse hemorrhagic arrest") {
+    World w;
+    w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
+    Ragdoll r = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+    const uint32_t group = w.get(r.head()).group;
+    w.vitals(group).blood_ml = 600.0f;
+
+    InputFrame in;
+    for (int i = 0; i < 60; ++i) w.step(in);
+    CHECK(w.vitals(group).arrested);
+    CHECK(!w.vitals(group).dead);
+
+    w.apply_iv(r.head(), 1200.0f);
+    for (int i = 0; i < 240 * 10; ++i) w.step(in);
+    CHECK(w.vitals(group).blood_ml >= 1200.0f);
+    w.defibrillate(r.head());
+    CHECK(!w.vitals(group).arrested);
+    CHECK(!w.vitals(group).dead);
+
+    w.vitals(group).blood_ml = 600.0f;
+    for (int i = 0; i < 60; ++i) w.step(in);
+    CHECK(w.vitals(group).arrested);
+    w.vitals(group).arrest_s = 179.0f;
+    for (int i = 0; i < 240 * 3; ++i) w.step(in);
+    CHECK(w.vitals(group).dead);
+}
+
+TEST_CASE("chest seal halves hypoxia from lung damage") {
+    auto hypoxia_after_one_second = [](bool sealed) {
+        World w;
+        const BodyId body = w.add_box(Vec2{0.0f, 0.0f}, Vec2{0.2f, 0.2f});
+        w.set_material(body, MaterialId::Flesh);
+        const uint32_t group = w.create_group(Vitals{});
+        w.get(body).group = group;
+        w.add_compartment(body, Vec2{0.0f, 0.0f}, Vec2{0.1f, 0.1f},
+                          TissueKind::Lung);
+        w.get(body).compartments[0].damage = 1.0f;
+        if (sealed) w.apply_chest_seal(body);
+        InputFrame in;
+        for (int i = 0; i < 240; ++i) w.step(in);
+        return w.vitals(group).hypoxia;
+    };
+    const float open = hypoxia_after_one_second(false);
+    const float sealed = hypoxia_after_one_second(true);
+    CHECK(open > 0.2f);
+    CHECK(sealed < open * 0.7f);
+}
+
+TEST_CASE("splint halves a limb's bleeding and IV restores volume") {
+    World w;
+    const BodyId body = w.add_box(Vec2{0.0f, 0.0f}, Vec2{0.2f, 0.2f});
+    w.set_material(body, MaterialId::Flesh);
+    const uint32_t group = w.create_group(Vitals{});
+    w.get(body).group = group;
+    w.get(body).bleed_ml_s = 10.0f;
+
+    InputFrame in;
+    for (int i = 0; i < 10; ++i) w.step(in);
+    CHECK_NEAR(w.vitals(group).bleed_ml_s, 10.0f, 0.01f);
+    w.apply_splint(body);
+    for (int i = 0; i < 10; ++i) w.step(in);
+    CHECK_NEAR(w.vitals(group).bleed_ml_s, 5.0f, 0.01f);
+
+    w.vitals(group).blood_ml = 2000.0f;
+    w.apply_iv(body, 500.0f);
+    for (int i = 0; i < 240 * 10; ++i) w.step(in);
+    CHECK(w.vitals(group).blood_ml > 2400.0f);
+}
+
+TEST_CASE("a wired 220 V battery fibrillates a humanoid") {
+    World w;
+    w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
+    Ragdoll r = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+    const BodyId battery = w.add_static_box(Vec2{-1.0f, 1.5f}, Vec2{0.1f, 0.07f});
+    w.set_battery(battery, 220.0f);
+    InputFrame in;
+    for (int i = 0; i < 240; ++i) w.step(in);
+    CHECK(!w.vitals(w.get(r.head()).group).arrested);
+
+    w.add_wire(battery, r.torso());
+    for (int i = 0; i < 240; ++i) w.step(in);
+    CHECK(w.vitals(w.get(r.head()).group).arrested);
+}
+
+TEST_CASE("impact timbre and sound delay follow material and distance") {
+    CHECK(impact_tone_hz(MaterialId::Glass) > impact_tone_hz(MaterialId::Steel));
+    CHECK(impact_tone_hz(MaterialId::Steel) > impact_tone_hz(MaterialId::Wood));
+    CHECK(impact_tone_hz(MaterialId::Wood) > impact_tone_hz(MaterialId::Flesh));
+    CHECK_NEAR(sound_delay_seconds(343.0f), 1.0f, 1e-4f);
+    CHECK(bang_duration_seconds(100.0f) < bang_duration_seconds(20000.0f));
+    CHECK_NEAR(bang_duration_seconds(1.0e9f), 0.6f, 1e-5f);
+}
+
+TEST_CASE("cloth hangs from its pinned row and is tearable") {
+    World w;
+    Cloth c = spawn_cloth(w, Vec2{0.0f, 4.0f}, 6, 4, 0.12f, 0.03f);
+    CHECK(c.count == 24);
+    const float start_bottom = w.get(c.nodes[3 * 6]).pos.y;
+    InputFrame in;
+    for (int i = 0; i < 480; ++i) w.step(in);
+    const float bottom = w.get(c.nodes[3 * 6]).pos.y;
+    CHECK(bottom < start_bottom - 0.18f);
+    CHECK(std::fabs(w.get(c.nodes[0]).pos.y - 4.0f) < 0.08f);  // top row pinned
+}
+
+TEST_CASE("soft blob deforms under a hit but keeps its constraints") {
+    World w;
+    w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
+    Cloth blob = spawn_soft_blob(w, Vec2{0.0f, 3.0f}, 8, 0.35f, 1.0e6f);
+    const uint32_t joints_before = w.joint_count();
+    InputFrame in;
+    for (int i = 0; i < 240; ++i) w.step(in);
+    const Vec2 before = w.get(blob.nodes[5]).pos;
+    w.spawn_projectile(Vec2{-2.0f, 3.0f}, Vec2{600.0f, 0.0f}, 0.008f, 0.0045f, 0.0f);
+    float max_move = 0.0f;
+    for (int i = 0; i < 120; ++i) {
+        w.step(in);
+        max_move = std::max(max_move, length(w.get(blob.nodes[5]).pos - before));
+    }
+    CHECK(max_move > 0.02f);
+    CHECK(w.joint_count() == joints_before);
 }

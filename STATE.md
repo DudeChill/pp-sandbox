@@ -1,93 +1,49 @@
 # State
 
 ## Current milestone
-**M1 — joints, ragdolls, materials, construction. Complete.**
-M0 (engine core) complete.
+**M9 — final integration. Complete.** M0–M8 complete.
 
-Gate evidence (2026-10-30):
-- `ctest` / `pp_tests`: 10/10 cases pass.
-- 500 boxes: 0.77 ms average step (budget 16.6 ms).
-- Zero heap allocations across `World::step()` after warmup (asserted).
-- Determinism: identical hashes across 3,000 ticks in two independent worlds.
-- Visual: window on `:98`, instanced renderer, 6-box tower stable, grab
-  highlights and moves a body, circles settle.
+## Evidence (2026-10-30)
+- `pp_tests`: **48/48 cases pass** on Linux locally and on Windows CI.
+- CI run `41009696522` and successors: linux + windows success; Windows artifact
+  `pp-windows-x64` bundles `pp.exe`, `SDL2.dll`, VC++ runtime.
+- Benchmark (`pp_bench`, 1,500 bodies): ~1.0–1.5 ms average, p99 ≤ 2.3 ms.
+- Zero heap allocations inside `World::step()` after warm-up (asserted).
+- Determinism: identical hashes across worlds over thousands of ticks; scene
+  round-trip and 600-frame replay reproduce the stored hash.
 
-## M1 evidence (2026-10-30)
-- Distance/revolute/weld joints, angle limits, break thresholds, plastic hinge.
-- Beam plastic-yield test: no yield at 0.9× predicted moment, yield at 1.1×,
-  no rupture below ultimate (uses a plastic-hinge weld model).
-- 13-part ragdoll collapses and remains assembled (anchor gaps < 5 cm).
-- Rope holds a load and breaks above rated tension.
-- Noumenal checks: material table, weld/cut tools, joint rendering.
-- `pp_tests`: 18/18 pass; 500-body step still ~0.6 ms.
+## Implemented
+M0 core: fixed-step solver, contacts, projection, sleeping, renderer, harness.
+M1 construction: distance/revolute/weld joints, limits, motors, plastic hinges,
+14-part ragdoll, rope, materials, weld/cut.
+M2 trauma: tissue compartments, wound channels, hemorrhage, blood budget,
+shock, death, tourniquet, HUD bar, blood particles.
+M3 ballistics: projectiles, seven ammo classes, drag, CCD, penetration,
+fragmentation, glass/concrete fracture, explosions.
+M4 gore/melee: blade strokes, accumulated structural damage, joint severance,
+burns and fluid loss.
+M5 wiring/persistence: buttons, thrusters, wires, motors, binary scene,
+input replay with hash verification.
+M6 portability: Windows 10/11 (MSVC/vcpkg), Linux, CI matrix, runnable artifact.
+M7 depth: barrel-length velocity, zeroing, yaw, temporary cavity, armour,
+IV/blood/defib/chest seal/splint, arrest and hypoxia.
+M8 systems: 220 V electricity via the wire graph, procedural audio with
+distance-delayed crack, mass-spring cloth and soft blobs.
+M9 integration: docs, prompt/count alignment, cross-platform packaging.
 
-## M2/M3 vertical slice (2026-10-30)
-Implemented:
-- Projectiles: gravity, quadratic drag, swept-segment CCD, material-resistance
-  penetration, pass-through with energy loss, impulse transfer.
-- Trauma: per-body health, wound events, bleeding scaled by vascularity,
-  shared blood volume, unconsciousness (<2.5 L) and death (<0.9 L), vital
-  (brain) destruction threshold; ragdoll vitals group.
-- Tourniquet treatment (stops limb bleeding, asserted stable blood volume).
-- Blood particle feedback and a per-ragdoll blood bar (presentation only,
-  not yet volume-conserving).
-- Tests: penetration depth calibration, steel-stop vs flesh pass-through,
-  headshot death, limb bleed without immediate death, drag/gravity,
-  tourniquet-stabilised blood volume.
-
-## M4 progress (2026-10-30)
-- Tissue compartments (muscle, bone, artery, brain, heart, lungs, gut) with
-  path-length wound channels; artery severance drives hemorrhage.
-- Blade strokes with accumulated structural damage and joint severance.
-- Versioned binary scene save/load with warm-start cache; round-trip
-  determinism test over 240 further ticks.
-- Explosives: 8 kJ radial charge with impulse and blast-tissue damage.
-- Glass/concrete fracture into four deterministic shards above a material
-  energy threshold; joints on the fractured body are removed first.
-- Input replay recorder (`F6`/`F7`) with scene snapshot + per-tick inputs and
-  hash verification; tests prove byte-identical replay over 600 frames.
-- Heat/fire: ignition thresholds, spread, burn tissue damage, fluid loss, and
-  death of vital organs; flame rendering.
-- Wiring: bodies can be buttons or thrusters, wires form a signal graph,
-  thrusters apply force along +X when powered; save/load and hash included.
-- Blood budget: `emitted_ml` tracks every millilitre removed, asserted against
-  the initial volume.
-- Bitmap HUD (tool, ammo, bodies, wounds, blood) with a 3x5 built-in font.
-- Motor joints with target speed and torque cap; app motor tool (`M`).
-- Seven ammunition classes (`ammo.toml` data in code) with per-class drag and
-  fragmentation thresholds; deterministic fragment sub-projectiles; tests for
-  velocity ordering and 5.56-vs-9 mm fragmentation.
-
-## Next tasks (M6)
-1. Wiring/logic graph, thrusters, sensors.
-2. G7 ballistic coefficient tables and temporary cavity.
-3. Heat, electricity, and pressure systems.
-4. Blood particle volume tied to `emitted_ml`.
-5. Content pass and tutorial.
-
-## Known gaps / accepted debt
-- Weld plasticity is a hinge model, not a continuum mass-spring lattice; beam
-  strength uses a 2D depth assumption (`kDepth2D = 0.05 m`).
-- Joint wake propagation wakes whole islands; proper island sleeping is still
-  pending.
-- Position projection corrects translation only, not rotation.
-- Materials affect mass/friction/restitution only when assigned via
-  `set_material`; ragdoll density is a scaled value for 2D depth.
-- No multithreading yet, so the thread-count determinism gate is deferred to M5.
-- Renderer is debug-grade: flat quads/discs, no text or UI widgets.
-- Wound channels are rectangular-compartment approximations: no temporary
-  cavity, no fragmentation, no bone blocking. 5.56-class rounds over-penetrate
-  relative to the gelatin table.
-- Only one bladed stroke geometry (horizontal, 16 cm); no edge angle or
-  sliding velocity.
-- Blood particles are cosmetic; emitted volume is not yet tied to blood loss.
+## Known limitations (explicit)
+- Continuous FEM/mass-spring fracture is not implemented; welds use plastic
+  hinges and bodies split into four deterministic shards.
+- Wound channels use body-local AABBs, not polygon compartments; no bone
+  blocking.
+- Blood particles are cosmetic; the scalar budget is authoritative.
+- No multithreading; determinism is per build and thread count.
+- Renderer and audio are deliberately minimal (no assets, debug-grade).
 
 ## Performance log
 | Date | Scene | Result |
 |---|---|---|
-| 2026-10-30 | 500 boxes on ground, Release, 1 thread | 0.77 ms/step |
-| 2026-10-30 | demo scene, llvmpipe | 540–580 fps |
-| 2026-10-30 | M1 tests, 500 bodies | 0.6 ms/step |
-| 2026-10-30 | demo scene + 50 projectiles | 390–550 fps (llvmpipe) |
-| 2026-10-30 | scene save/load round-trip | 3.3 KB, hashes equal |
-| 2026-10-30 | 1,500 bodies (`pp_bench`) | avg 1.45 ms, p99 2.19 ms (budget 8 ms) |
+| 2026-10-30 | 500 boxes | 0.77 ms/step |
+| 2026-10-30 | 1,500 bodies (`pp_bench`) | avg 1.45 ms, p99 2.19 ms |
+| 2026-10-30 | Windows CI bench, 1,500 bodies | avg 0.79–1.2 ms, p99 ≤ 1.7 ms |
+| 2026-10-30 | demo scene, llvmpipe | 350–580 fps |
