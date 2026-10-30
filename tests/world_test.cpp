@@ -539,3 +539,77 @@ TEST_CASE("explosion kills a close ragdoll and shoves loose bodies") {
     CHECK(w.vitals(w.get(near.head()).group).dead);
     CHECK(!w.vitals(w.get(far.head()).group).dead);
 }
+
+TEST_CASE("emitted blood accounts for every millilitre lost") {
+    World w;
+    const BodyId block = w.add_static_box(Vec2{0.0f, 0.0f}, Vec2{0.1f, 0.1f});
+    w.set_material(block, MaterialId::Flesh);
+    const uint32_t group = w.create_group(Vitals{});
+    w.get(block).group = group;
+    w.add_compartment(block, Vec2{0.0f, 0.0f}, Vec2{0.02f, 0.02f}, TissueKind::Artery);
+    w.add_compartment(block, Vec2{0.0f, 0.0f}, Vec2{0.08f, 0.08f}, TissueKind::Muscle);
+    w.spawn_projectile(Vec2{-2.0f, 0.0f}, Vec2{350.0f, 0.0f}, 0.008f, 0.0045f, 0.0f);
+    InputFrame in;
+    for (int i = 0; i < 240 * 30; ++i) w.step(in);
+    const Vitals& v = w.vitals(group);
+    CHECK_NEAR(v.blood_ml + v.emitted_ml, 5200.0f, 0.5f);
+    CHECK(v.emitted_ml > 100.0f);
+}
+
+TEST_CASE("recorded inputs replay the same state from a snapshot") {
+    World w;
+    w.add_static_box(Vec2{0.0f, -0.5f}, Vec2{60.0f, 0.5f});
+    Ragdoll r = spawn_ragdoll(w, Vec2{0.0f, 0.02f});
+    w.add_box(Vec2{3.0f, 2.0f}, Vec2{0.4f, 0.4f});
+
+    std::vector<uint8_t> snapshot;
+    CHECK(w.save_scene(snapshot));
+
+    std::vector<InputFrame> frames;
+    frames.reserve(600);
+    InputFrame in;
+    for (int i = 0; i < 600; ++i) {
+        in.grab = r.torso();
+        in.grab_active = (i % 120) < 70;
+        in.grab_target = Vec2{std::sin(static_cast<float>(i) * 0.05f) * 2.0f, 2.0f};
+        frames.push_back(in);
+        w.step(in);
+    }
+    const uint64_t expected = w.state_hash();
+    std::vector<uint64_t> hashes;
+    hashes.reserve(frames.size());
+
+    World replayed;
+    CHECK(replayed.load_scene(snapshot.data(), snapshot.size()));
+    for (const InputFrame& f : frames) {
+        replayed.step(f);
+        hashes.push_back(replayed.state_hash());
+    }
+    CHECK(hashes.back() == expected);
+
+    World again;
+    CHECK(again.load_scene(snapshot.data(), snapshot.size()));
+    for (size_t i = 0; i < frames.size(); ++i) {
+        again.step(frames[i]);
+        CHECK(again.state_hash() == hashes[i]);
+    }
+}
+
+TEST_CASE("glass shatters into shards while steel absorbs the same round") {
+    auto after_shot = [](MaterialId mat) {
+        World w;
+        const BodyId pane = w.add_static_box(Vec2{0.0f, 1.0f}, Vec2{0.5f, 0.5f});
+        w.set_material(pane, mat);
+        const uint32_t before = w.body_count();
+        w.spawn_projectile(Vec2{-2.0f, 1.0f}, Vec2{350.0f, 0.0f}, 0.008f, 0.0045f, 0.0f);
+        InputFrame in;
+        for (int i = 0; i < 30; ++i) w.step(in);
+        return std::pair<uint32_t, uint32_t>(before, w.body_count());
+    };
+    const auto glass = after_shot(MaterialId::Glass);
+    CHECK(glass.second == glass.first + 3);
+    const auto steel = after_shot(MaterialId::Steel);
+    CHECK(steel.second == steel.first);
+
+    std::printf("  glass bodies %u -> %u\n", glass.first, glass.second);
+}

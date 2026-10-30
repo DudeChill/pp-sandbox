@@ -21,7 +21,10 @@ construction) are complete:
 - 18 headless tests covering physics, joints, materials, determinism,
   allocation, and performance.
 
-Scene save/load (`F5`/`F9`) round-trips deterministically. A 3x5 bitmap HUD
+Scene save/load (`F5`/`F9`) and input replay (`F6`/`F7`) round-trip
+deterministically; replay reports `OK` or `DIVERGED` from the stored hash.
+Glass shatters into four shards above its fracture energy; steel absorbs the
+same round. A 3x5 bitmap HUD
 shows tool, ammunition, body/wound counts, and blood.
 
 A first **trauma/ballistics slice** (M2/M3) is in: seven ammunition classes
@@ -76,6 +79,7 @@ The build deliberately uses `-j2` and `-ffp-contract=off`; do not add
 | `1` / `2` / `3` | Select 9×19, 5.56, or 7.62 ammunition |
 | `F` | Fire the selected round from the left of the cursor toward it |
 | `E` | Detonate an 8 kJ charge at the cursor |
+| `K` | Spawn a glass pane at the cursor |
 | `T` | Tourniquet tool: click a limb to stop its bleeding |
 | `V` | Blade tool: slash the body under the cursor (cuts tissue, severs limbs) |
 | `X` | Delete the body under the cursor |
@@ -83,6 +87,7 @@ The build deliberately uses `-j2` and `-ffp-contract=off`; do not add
 | `Space` | Pause/unpause |
 | `R` | Reset the demo scene |
 | `F5` / `F9` | Save / load `scene.ppb` |
+| `F6` / `F7` | Record / replay `replay.ppr` (hash-verified) |
 | `Esc` | Quit |
 
 ## Layout

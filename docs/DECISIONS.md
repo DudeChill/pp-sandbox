@@ -136,3 +136,12 @@ instanced quads through the existing batch renderer.
 **Reason.** No external font dependency, crisp at any zoom, and it keeps the
 HUD inside the single draw pass.
 **Revisit.** Replace with a signed-distance atlas if typography matters.
+
+## D018 — Deterministic fracture and replay
+**Choice.** Fracture splits a box into four equal shards at fixed offsets and
+removes attached joints first; replays store the scene snapshot, per-tick input
+frames, and the final state hash.
+**Reason.** Both features are testable without randomness and preserve the
+"same inputs, same state" contract.
+**Revisit.** Add a fracture pattern driven by impact point and material
+toughness instead of a fixed quadrant split.

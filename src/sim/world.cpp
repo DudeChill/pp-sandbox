@@ -782,6 +782,52 @@ bool World::apply_blade(BodyId id, Vec2 world_point, Vec2 dir, float energy_j) {
     return severed_joint;
 }
 
+bool World::fracture_body(uint32_t index, Vec2 dir, float energy_j) {
+    if (index >= bodies_.size() || !alive_[index]) return false;
+    const Body& body = bodies_[index];
+    const Material& mat = material(body.material);
+    if (energy_j < mat.fracture_energy) return false;
+
+    const Vec2 center = body.pos;
+    const float angle = body.angle;
+    const Vec2 half = body.half;
+    const Vec2 vel = body.vel;
+    const float spin = body.ang_vel;
+    const MaterialId material_id = body.material;
+    const Shape shape = body.shape;
+
+    if (shape != Shape::Box || half.x < 0.02f || half.y < 0.02f) return false;
+
+    for (uint32_t ji = 0; ji < joints_.size(); ++ji) {
+        if (!joint_alive_[ji]) continue;
+        if (joints_[ji].a == index || joints_[ji].b == index) {
+            remove_joint(JointId{ji, joints_[ji].generation});
+        }
+    }
+
+    const BodyId removed = BodyId{index, bodies_[index].generation};
+    remove(removed);
+
+    const Vec2 offsets[4] = {{-1.0f, -1.0f}, {1.0f, -1.0f}, {-1.0f, 1.0f}, {1.0f, 1.0f}};
+    const Vec2 shard_half{half.x * 0.42f, half.y * 0.42f};
+    for (const Vec2 off : offsets) {
+        const Vec2 local{off.x * half.x * 0.5f, off.y * half.y * 0.5f};
+        const Vec2 pos = center + rotate(local, angle);
+        const BodyId shard = add_box(pos, shard_half, angle, material(material_id).density);
+        (void)shard;
+        const uint32_t sidx = shard.index;
+        Body& sb = bodies_[sidx];
+        sb.material = material_id;
+        sb.vel = vel + rotate(Vec2{off.x * 1.4f, off.y * 1.4f}, angle) + dir * 1.2f;
+        sb.ang_vel = spin + off.x * 2.0f;
+        sb.friction = mat.friction;
+        sb.restitution = mat.restitution;
+        sb.asleep = false;
+        sb.sleep_timer = 0.0f;
+    }
+    return true;
+}
+
 void World::explode(Vec2 center, float radius, float energy_j) {
     constexpr float kPi = 3.14159265358979323846f;
     for (uint32_t i = 0; i < bodies_.size(); ++i) {
@@ -831,6 +877,13 @@ void World::step_projectiles() {
     };
     FragmentSpawn fragments[64];
     int fragment_count = 0;
+    struct FractureRequest {
+        uint32_t body;
+        Vec2 dir;
+        float energy;
+    };
+    FractureRequest fractures[16];
+    int fracture_count = 0;
     for (uint32_t i = 0; i < projectiles_.size(); ++i) {
         if (!projectile_alive_[i]) continue;
         Projectile& p = projectiles_[i];
@@ -942,6 +995,10 @@ void World::step_projectiles() {
             }
         }
 
+        if (energy >= mat.fracture_energy && fracture_count < 16) {
+            fractures[fracture_count++] = FractureRequest{best_body, dir, energy};
+        }
+
         const float lost = mat.penetration_resistance * area * path;
         const float remaining = std::max(0.0f, energy - lost);
         if (depth > path) {
@@ -967,6 +1024,9 @@ void World::step_projectiles() {
         const FragmentSpawn& fs = fragments[f];
         spawn_projectile(fs.pos, fs.vel, fs.mass, fs.radius, fs.drag_k);
     }
+    for (int f = 0; f < fracture_count; ++f) {
+        fracture_body(fractures[f].body, fractures[f].dir, fractures[f].energy);
+    }
 }
 
 void World::update_vitals() {
@@ -978,7 +1038,10 @@ void World::update_vitals() {
     }
     for (Vitals& v : groups_) {
         if (v.dead) continue;
-        v.blood_ml = std::max(0.0f, v.blood_ml - v.bleed_ml_s * kDt);
+        const float requested = v.bleed_ml_s * kDt;
+        const float loss = std::min(requested, v.blood_ml);
+        v.blood_ml -= loss;
+        v.emitted_ml += loss;
         if (v.blood_ml < 900.0f) {
             v.dead = true;
         } else if (v.blood_ml < 2500.0f) {
@@ -1469,6 +1532,7 @@ uint64_t World::state_hash() const {
     h.u32(static_cast<uint32_t>(groups_.size()));
     for (const Vitals& v : groups_) {
         h.f32(v.blood_ml);
+        h.f32(v.emitted_ml);
         h.boolean(v.unconscious);
         h.boolean(v.dead);
     }

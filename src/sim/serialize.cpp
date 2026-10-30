@@ -185,6 +185,7 @@ bool World::save_scene(std::vector<uint8_t>& out) const {
     w.u32(static_cast<uint32_t>(groups_.size()));
     for (const Vitals& v : groups_) {
         w.f32(v.blood_ml);
+        w.f32(v.emitted_ml);
         w.f32(v.bleed_ml_s);
         w.flag(v.unconscious);
         w.flag(v.dead);
@@ -301,6 +302,7 @@ bool World::load_scene(const void* data, std::size_t size) {
     for (uint32_t i = 0; i < group_count; ++i) {
         Vitals v;
         v.blood_ml = r.f32();
+        v.emitted_ml = r.f32();
         v.bleed_ml_s = r.f32();
         v.unconscious = r.flag();
         v.dead = r.flag();

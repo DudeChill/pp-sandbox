@@ -107,7 +107,18 @@ inverse mass, and the wound path is a 20 cm segment through the body along the
 radial direction with `energy_factor = clamp(blast/500, 0, 1)`. Deterministic;
 no fragments, no overpressure wave.
 
-## Open items (M4+)
+## Fracture thresholds
+
+| Material | Fracture energy (J) | Result |
+|---|---|---|
+| glass | 25 | four 0.42-scale shards, radial velocity |
+| concrete | 400 | four shards |
+| everything else | 1e30 | no fracture (bulk only) |
+
+Fracture removes the body's joints before splitting, and shard velocities are
+`v + radial(±1.4) + dir(1.2)` with inherited spin.
+
+## Open items (M6)
 
 - Material table with density, modulus, strengths, toughness (prompt §13).
 - Energy audit for restitution and friction losses.

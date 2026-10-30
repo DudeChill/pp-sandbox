@@ -43,6 +43,7 @@ struct Projectile {
 
 struct Vitals {
     float blood_ml = 5200.0f;
+    float emitted_ml = 0.0f;
     float bleed_ml_s = 0.0f;
     bool unconscious = false;
     bool dead = false;
@@ -173,6 +174,7 @@ public:
     // Applies a blade stroke; returns true if it severed a joint (dismemberment).
     bool apply_blade(BodyId id, Vec2 world_point, Vec2 dir, float energy_j);
     void explode(Vec2 center, float radius, float energy_j);
+    bool fracture_body(uint32_t index, Vec2 dir, float energy_j);
 
     [[nodiscard]] bool alive(BodyId id) const;
     [[nodiscard]] BodyId id_at(uint32_t index) const {

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <vector>
 
@@ -106,6 +107,47 @@ int main(int, char**) {
     BodyId weld_first{};
     Vec2 weld_point{};
     int ammo_index = 0;
+
+    struct ReplayFrame {
+        BodyId grab{};
+        Vec2 target{};
+        bool active = false;
+    };
+    bool recording = false;
+    std::vector<uint8_t> record_scene;
+    std::vector<ReplayFrame> record_frames;
+    bool playing = false;
+    std::vector<uint8_t> play_scene;
+    std::vector<ReplayFrame> play_frames;
+    std::size_t play_index = 0;
+    uint64_t play_expected = 0;
+
+    auto write_u32 = [](std::vector<uint8_t>& b, uint32_t v) {
+        b.push_back(static_cast<uint8_t>(v));
+        b.push_back(static_cast<uint8_t>(v >> 8));
+        b.push_back(static_cast<uint8_t>(v >> 16));
+        b.push_back(static_cast<uint8_t>(v >> 24));
+    };
+    auto write_f32 = [&](std::vector<uint8_t>& b, float f) {
+        uint32_t v = 0;
+        std::memcpy(&v, &f, sizeof v);
+        write_u32(b, v);
+    };
+    auto read_u32 = [](const std::vector<uint8_t>& b, std::size_t& off, bool& ok) {
+        if (off + 4 > b.size()) { ok = false; return 0u; }
+        const uint32_t v = static_cast<uint32_t>(b[off]) |
+                           (static_cast<uint32_t>(b[off + 1]) << 8) |
+                           (static_cast<uint32_t>(b[off + 2]) << 16) |
+                           (static_cast<uint32_t>(b[off + 3]) << 24);
+        off += 4;
+        return v;
+    };
+    auto read_f32 = [&](const std::vector<uint8_t>& b, std::size_t& off, bool& ok) {
+        const uint32_t v = read_u32(b, off, ok);
+        float f = 0.0f;
+        std::memcpy(&f, &v, sizeof f);
+        return f;
+    };
     struct Blood {
         Vec2 pos{};
         Vec2 vel{};
@@ -206,6 +248,12 @@ int main(int, char**) {
                     case SDLK_b: world.add_box(mouse_world, Vec2{0.4f, 0.4f}); break;
                     case SDLK_h: spawn_ragdoll(world, mouse_world); break;
                     case SDLK_e: world.explode(mouse_world, 4.0f, 8000.0f); break;
+                    case SDLK_k: {
+                        const BodyId pane = world.add_static_box(mouse_world,
+                                                                 Vec2{0.5f, 0.5f});
+                        world.set_material(pane, MaterialId::Glass);
+                        break;
+                    }
                     case SDLK_1: ammo_index = 0; break;
                     case SDLK_2: ammo_index = 1; break;
                     case SDLK_3: ammo_index = 2; break;
@@ -238,6 +286,90 @@ int main(int, char**) {
                         out.write(reinterpret_cast<const char*>(blob.data()),
                                   static_cast<std::streamsize>(blob.size()));
                         std::printf("saved scene.ppb (%zu bytes)\n", blob.size());
+                        break;
+                    }
+                    case SDLK_F6: {
+                        if (!recording) {
+                            record_scene.clear();
+                            world.save_scene(record_scene);
+                            record_frames.clear();
+                            recording = true;
+                            std::printf("recording started\n");
+                        } else {
+                            std::vector<uint8_t> blob;
+                            write_u32(blob, 0x50525050u);  // PPRP
+                            write_u32(blob, 1u);
+                            write_u32(blob, static_cast<uint32_t>(record_scene.size()));
+                            blob.insert(blob.end(), record_scene.begin(), record_scene.end());
+                            write_u32(blob, static_cast<uint32_t>(record_frames.size()));
+                            for (const ReplayFrame& f : record_frames) {
+                                write_u32(blob, f.grab.index);
+                                write_u32(blob, f.grab.generation);
+                                write_f32(blob, f.target.x);
+                                write_f32(blob, f.target.y);
+                                blob.push_back(f.active ? 1u : 0u);
+                            }
+                            const uint64_t final_hash = world.state_hash();
+                            write_u32(blob, static_cast<uint32_t>(final_hash));
+                            write_u32(blob, static_cast<uint32_t>(final_hash >> 32));
+                            std::ofstream out("replay.ppr", std::ios::binary);
+                            out.write(reinterpret_cast<const char*>(blob.data()),
+                                      static_cast<std::streamsize>(blob.size()));
+                            recording = false;
+                            std::printf("replay written (%zu frames)\n",
+                                        record_frames.size());
+                        }
+                        break;
+                    }
+                    case SDLK_F7: {
+                        std::ifstream in_file("replay.ppr", std::ios::binary);
+                        std::vector<uint8_t> blob((std::istreambuf_iterator<char>(in_file)),
+                                                  std::istreambuf_iterator<char>());
+                        bool ok = !blob.empty();
+                        std::size_t off = 0;
+                        if (ok) ok = read_u32(blob, off, ok) == 0x50525050u;
+                        if (ok) ok = read_u32(blob, off, ok) == 1u;
+                        const uint32_t scene_size = ok ? read_u32(blob, off, ok) : 0;
+                        if (ok) ok = off + scene_size + 4 <= blob.size();
+                        std::vector<uint8_t> scene;
+                        if (ok) {
+                            scene.assign(blob.begin() + static_cast<std::ptrdiff_t>(off),
+                                         blob.begin() + static_cast<std::ptrdiff_t>(off + scene_size));
+                            off += scene_size;
+                        }
+                        const uint32_t frame_count = ok ? read_u32(blob, off, ok) : 0;
+                        std::vector<ReplayFrame> frames;
+                        if (ok) frames.reserve(frame_count);
+                        for (uint32_t i = 0; ok && i < frame_count; ++i) {
+                            ReplayFrame f;
+                            f.grab.index = read_u32(blob, off, ok);
+                            f.grab.generation = read_u32(blob, off, ok);
+                            f.target.x = read_f32(blob, off, ok);
+                            f.target.y = read_f32(blob, off, ok);
+                            if (ok && off < blob.size()) {
+                                f.active = blob[off++] != 0;
+                            } else {
+                                ok = false;
+                            }
+                            frames.push_back(f);
+                        }
+                        uint64_t expected = 0;
+                        if (ok) {
+                            expected = read_u32(blob, off, ok);
+                            expected |= static_cast<uint64_t>(read_u32(blob, off, ok)) << 32;
+                        }
+                        if (!ok || !world.load_scene(scene.data(), scene.size())) {
+                            std::printf("replay rejected\n");
+                        } else {
+                            play_scene = std::move(scene);
+                            play_frames = std::move(frames);
+                            play_index = 0;
+                            play_expected = expected;
+                            playing = true;
+                            blood.clear();
+                            wounds_seen = 0;
+                            std::printf("replay started (%zu frames)\n", play_frames.size());
+                        }
                         break;
                     }
                     case SDLK_F9: {
@@ -281,10 +413,29 @@ int main(int, char**) {
             int steps = 0;
             while (accumulator >= static_cast<double>(World::kDt) && steps < 8) {
                 InputFrame in;
-                in.grab = grab;
-                in.grab_target = mouse_world;
-                in.grab_active = grab.valid();
+                if (playing && play_index < play_frames.size()) {
+                    const ReplayFrame& f = play_frames[play_index++];
+                    in.grab = f.grab;
+                    in.grab_target = f.target;
+                    in.grab_active = f.active;
+                } else {
+                    in.grab = grab;
+                    in.grab_target = mouse_world;
+                    in.grab_active = grab.valid();
+                }
+                if (recording) {
+                    record_frames.push_back(ReplayFrame{in.grab, in.grab_target,
+                                                        in.grab_active});
+                }
                 world.step(in);
+                if (playing && play_index >= play_frames.size()) {
+                    const uint64_t actual = world.state_hash();
+                    std::printf("replay %s (hash %016llx expected %016llx)\n",
+                                actual == play_expected ? "OK" : "DIVERGED",
+                                static_cast<unsigned long long>(actual),
+                                static_cast<unsigned long long>(play_expected));
+                    playing = false;
+                }
                 auto next_rand = [&]() {
                     blood_rng ^= blood_rng << 13;
                     blood_rng ^= blood_rng >> 17;

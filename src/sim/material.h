@@ -27,6 +27,7 @@ struct Material {
     float ultimate_stress; // Pa
     float toughness;       // relative, drives crack arrest (M1+)
     float penetration_resistance; // Pa, calibrated against gelatin tests (M3)
+    float fracture_energy;        // J, absolute threshold; 1e30 = never
 };
 
 const Material& material(MaterialId id);

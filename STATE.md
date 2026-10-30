@@ -42,18 +42,24 @@ Implemented:
 - Versioned binary scene save/load with warm-start cache; round-trip
   determinism test over 240 further ticks.
 - Explosives: 8 kJ radial charge with impulse and blast-tissue damage.
+- Glass/concrete fracture into four deterministic shards above a material
+  energy threshold; joints on the fractured body are removed first.
+- Input replay recorder (`F6`/`F7`) with scene snapshot + per-tick inputs and
+  hash verification; tests prove byte-identical replay over 600 frames.
+- Blood budget: `emitted_ml` tracks every millilitre removed, asserted against
+  the initial volume.
 - Bitmap HUD (tool, ammo, bodies, wounds, blood) with a 3x5 built-in font.
 - Motor joints with target speed and torque cap; app motor tool (`M`).
 - Seven ammunition classes (`ammo.toml` data in code) with per-class drag and
   fragmentation thresholds; deterministic fragment sub-projectiles; tests for
   velocity ordering and 5.56-vs-9 mm fragmentation.
 
-## Next tasks (M5)
-1. Ballistic coefficient tables (G7), ammunition classes, fragmentation.
-2. Wiring/logic, motors, thrusters.
-3. Replay recording and hash verification.
-4. Blood volume conservation between particles and vitals.
-5. Heat/electricity/pressure systems.
+## Next tasks (M6)
+1. Wiring/logic graph, thrusters, sensors.
+2. G7 ballistic coefficient tables and temporary cavity.
+3. Heat, electricity, and pressure systems.
+4. Blood particle volume tied to `emitted_ml`.
+5. Content pass and tutorial.
 
 ## Known gaps / accepted debt
 - Weld plasticity is a hinge model, not a continuum mass-spring lattice; beam
