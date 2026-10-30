@@ -27,8 +27,8 @@ Windows 10/11 (Visual Studio 2022 Build Tools + CMake):
 ```
 
 `run.cmd` configures, builds Release, and launches `pp.exe`. SDL2 is downloaded
-automatically as a signed prebuilt package the first time; no vcpkg or manual
-dependency setup is needed. In PowerShell, prefix the script with `.\` as shown;
+automatically from the official SDL release (SHA-256 pinned) the first time; no
+vcpkg or manual dependency setup is needed. In PowerShell, prefix the script with `.\` as shown;
 typing `run.cmd` alone searches only `PATH`.
 
 ## Status — M0–M9 complete
@@ -53,7 +53,8 @@ typing `run.cmd` alone searches only `PATH`.
   supersonic crack.
 - **Tooling:** in-game console for spawning, tuning, measuring, profiling and
   dumping state; camera pan/zoom; deterministic 1/2/4-thread broadphase.
-- **Platforms:** Windows 10/11 x64 (MSVC + vcpkg) and Linux; shared CMake and
+- **Platforms:** Windows 10/11 x64 (MSVC, auto-fetched or vcpkg SDL2) and
+  Linux; shared CMake and
   GitHub Actions CI. Windows artifact bundles `SDL2.dll` and the VC++ runtime.
 
 ## Build
