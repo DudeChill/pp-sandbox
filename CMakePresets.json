@@ -16,6 +16,18 @@
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
       }
+    },
+    {
+      "name": "windows",
+      "binaryDir": "${sourceDir}/build/windows",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "PP_BUILD_APP": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -26,6 +38,11 @@
     {
       "name": "debug",
       "configurePreset": "debug"
+    },
+    {
+      "name": "windows",
+      "configurePreset": "windows",
+      "configuration": "Release"
     }
   ]
 }

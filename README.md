@@ -7,6 +7,29 @@ deterministic simulation core. Every visible wound, fracture, fire, and signal i
 readout of state; nothing is scripted. `PROMPT.md` is the complete implementation
 specification.
 
+## Quick start
+
+Linux:
+
+```sh
+./run.sh            # configure, build, launch
+make test           # build and run the 48-case suite
+```
+
+On Debian/Ubuntu without `libsdl2-dev`, `build.sh` fetches the headers into
+`~/.local/opt/ppdeps` without root. Plain `cmake -S . -B build` also finds that
+prefix automatically.
+
+Windows 10/11 (Visual Studio 2022 Build Tools + vcpkg):
+
+```bat
+set VCPKG_ROOT=C:\vcpkg
+run.cmd
+```
+
+`run.cmd` configures with the vcpkg toolchain, installs the manifest dependency
+(`sdl2`), builds Release, and launches `pp.exe`.
+
 ## Status — M0–M9 complete
 
 - **Physics:** fixed 240 Hz, warm-started sequential-impulse solver, position
@@ -37,16 +60,17 @@ specification.
 ### Windows 10/11 (x64)
 
 Requirements: Visual Studio 2022 Build Tools (Desktop C++), CMake 3.25+, and
-[vcpkg](https://github.com/microsoft/vcpkg) with SDL2.
+[vcpkg](https://github.com/microsoft/vcpkg). `run.cmd` does the rest; the manual
+equivalent is:
 
 ```bat
-vcpkg install sdl2 --triplet x64-windows
-cmake -S . -B build -A x64 ^
-  -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
-cmake --build build --config Release -j
-ctest --test-dir build -C Release --output-on-failure
-build\Release\pp.exe
+cmake --preset windows
+cmake --build --preset windows
+build\windows\Release\pp.exe
 ```
+
+The `windows` preset points at `$env{VCPKG_ROOT}` and stages SDL2 via the
+manifest in `vcpkg.json`.
 
 vcpkg copies `SDL2.dll` next to the executable. `pp.exe` is built as a console
 application so logs stay visible. The simulation and tests build without SDL
@@ -57,12 +81,18 @@ using `-DPP_BUILD_APP=OFF`. Prebuilt bundles are the
 ### Linux
 
 ```sh
-sudo apt-get install libsdl2-dev    # or: ./scripts/setup_deps.sh (user prefix)
+./run.sh                            # or: make run
+# manual:
 cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
 cmake --build build/release -j2
 ctest --test-dir build/release --output-on-failure
-./build/release/pp                  # needs an X display, e.g. DISPLAY=:98
+./build/release/pp                  # needs an X display
 ```
+
+`./build.sh` is the build-only entry point and passes extra arguments to the CMake
+configure step. `make` targets: `build`, `run`, `test`, `bench`, `deps`, `clean`;
+`make run ARGS="--self-test"` passes application flags. With no SDL2 dev package,
+`./scripts/setup_deps.sh` installs headers into the user prefix.
 
 ## Controls
 
@@ -94,7 +124,7 @@ ctest --test-dir build/release --output-on-failure
 ## Verification
 
 ```sh
-ctest --test-dir build/release --output-on-failure
+make test                       # or: ctest --test-dir build/release --output-on-failure
 ./build/release/pp_tests        # 48 cases
 cmake --build build/release -j2 --target pp_bench && ./build/release/pp_bench
 DISPLAY=:98 ./build/release/pp --frames 300 --threads 4   # sim/render p99 report
@@ -128,4 +158,8 @@ src/platform SDL include shim
 tests/       headless numeric suite
 tools/       bench, scene builders
 docs/        DECISIONS.md, PHYSICS.md
+build.sh     configure + build (auto SDL2 headers on Debian/Ubuntu)
+run.sh       build + launch
+run.cmd      Windows build + launch
+Makefile     build/run/test/bench/clean aliases
 ```
